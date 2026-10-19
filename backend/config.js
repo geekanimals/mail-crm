@@ -36,7 +36,7 @@ export const config = {
   },
   replyCheckMinutes: Math.min(59, Math.max(1, num('REPLY_CHECK_INTERVAL_MINUTES', 5))),
 
-  intervalDays: Math.max(1, num('DEFAULT_FOLLOWUP_INTERVAL_DAYS', 2)),
+  intervalDays: Math.max(1, num('DEFAULT_FOLLOWUP_INTERVAL_DAYS', 3)), // working days between follow-ups (default 3)
   sequenceDays: Math.max(0, num('DEFAULT_SEQUENCE_DAYS', 10)),
   dailyLimit: Math.max(1, num('DAILY_SEND_LIMIT', 100)),
   hourlyLimit: Math.max(1, num('HOURLY_SEND_LIMIT', 30)), // max emails per hour (spread out = less spam)

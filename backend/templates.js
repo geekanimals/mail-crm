@@ -5,23 +5,14 @@
 
 // Signature - added automatically at the end of EVERY email (first email + all follow-ups).
 // If your first email in the file already has "Aanchal Ara", it is not added twice.
-// The logo is backend/assets/geekmail.png (sent inside the email, so it always shows).
-export const SIGNATURE = `Aanchal Ara
-Executive Assistant - Director
-m: +917251924877  e: hr@geekcreativeagency.com
-Book appointment: calendly.com/geekexploring`;
+export const SIGNATURE = `Best regards,
 
-export const SIGNATURE_LOGO = 'geekmail.png';
+Aanchal Ara
+Mobile:  +91-7251924877
+Executive Assistant to Director`;
 
-const blue = '#5bbad9';
-export const SIGNATURE_HTML = `<table cellpadding="0" cellspacing="0" border="0" style="margin-top:6px;font-family:Arial,Helvetica,sans-serif;border-collapse:collapse"><tr>
-<td style="padding:0 14px 0 0;vertical-align:middle"><img src="cid:geek-signature-logo" width="150" height="123" alt="Geek" style="display:block;border:0;width:150px;height:123px"></td>
-<td style="border-left:4px solid ${blue};padding:6px 0 6px 18px;vertical-align:middle;line-height:1.5">
-<div style="color:${blue};font-size:19px;margin-bottom:8px">Aanchal Ara</div>
-<div style="color:#1f1f1f;font-size:15px;font-weight:bold">Executive Assistant - Director</div>
-<div style="color:#1f1f1f;font-size:14px"><span style="color:${blue}">m:</span> +917251924877&nbsp;&nbsp;<span style="color:#a3c4dc">e:</span><a href="mailto:hr@geekcreativeagency.com" style="color:#1155cc">hr@geekcreativeagency.com</a></div>
-<div style="color:#1f1f1f;font-size:14px"><b>Book appointment:</b> <a href="https://calendly.com/geekexploring" style="color:#1155cc">calendly.com/geekexploring</a></div>
-</td></tr></table>`;
+// text that tells us the signature is already in an email
+export const SIGNATURE_KEY = 'Aanchal Ara';
 
 const hi = (text) => `Hi {{firstName}},\n\n${text}`;
 
@@ -39,39 +30,29 @@ If it's worth it, reply and I'll send a short note on what a barter creator camp
 
 Given the brand's growth phase, I'd love to explore how this model could support upcoming launches and awareness campaigns. Please share a suitable time for a quick 15-minute call to discuss this further.
 
-Awaiting your response.
-
-Regards,`),
+Awaiting your response.`),
 
   // 3
   hi(`Just following up on my earlier note. We can help {{company | your brand}} scale micro & nano creator collaborations to drive authentic product content, increase brand visibility, and reach a wider relevant audience while keeping creator costs efficient through barter. If you share your upcoming launch or marketing focus, I can send 2–3 tailored campaign ideas for your brand.
 
-Looking forward to your response.
-
-Regards,`),
+Looking forward to your response.`),
 
   // 4
   hi(`Following up on my previous messages regarding creator amplification for {{company | your brand}}.
 
 Please let me know if you have 15 minutes to spare for a quick call this week to discuss how we can support your upcoming marketing initiatives.
 
-Awaiting your response.
-
-Best regards,`),
+Awaiting your response.`),
 
   // 5
   hi(`Following up on my previous notes regarding barter-led creator campaigns for {{company | your brand}}.
 
 Please let me know if you have 10-15 minutes available for a quick call this week to discuss how this could work for your upcoming campaigns.
 
-Awaiting your response.
-
-Best regards,`),
+Awaiting your response.`),
 
   // 6 - last one
   hi(`Since I've sent a few follow-ups regarding barter-led creator campaigns for {{company | your brand}}, please let me know a time that works best for you to connect for a quick 15-minute call.
 
-Awaiting your response.
-
-Best regards,`),
+Awaiting your response.`),
 ];

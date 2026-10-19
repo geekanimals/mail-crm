@@ -6,7 +6,7 @@ import { simpleParser } from 'mailparser';
 import { config, imapReady, smtpReady } from './config.js';
 import { Campaign, Contact, EmailLog, Enrollment, Reply, Suppression, getSetting, setSetting, remember, notify } from './models.js';
 import { buildEmail, sendMail, isBadAddress, parseCc, unsubscribeUrl } from './mail.js';
-import { FOLLOW_UPS, SIGNATURE } from './templates.js';
+import { FOLLOW_UPS, SIGNATURE, SIGNATURE_KEY } from './templates.js';
 
 const DAY = 86400000;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -112,8 +112,7 @@ export async function enroll(campaign, { contactIds, batch, onlyNew = true } = {
 
 /* ---------------- sending ---------------- */
 // signature at the end of every email (not twice if the text already has it)
-const sigFirstLine = SIGNATURE.trim().split('\n')[0].trim().toLowerCase();
-export const hasSignature = (body) => !SIGNATURE.trim() || String(body || '').toLowerCase().includes(sigFirstLine);
+export const hasSignature = (body) => !SIGNATURE.trim() || String(body || '').toLowerCase().includes(SIGNATURE_KEY.toLowerCase());
 // text version (for previews in the app)
 export const withSignature = (body) => (hasSignature(body) ? body : `${String(body || '').trimEnd()}\n\n${SIGNATURE.trim()}`);
 
@@ -259,7 +258,7 @@ export async function runQueue({ force = false } = {}) {
       if (r === 'sent') {
         result.sent++;
         left--;
-        await sleep(config.sendDelaySec * 1000 * (0.7 + Math.random() * 0.6)); // natural, uneven gaps look less like a bot
+        await sleep(config.sendDelaySec * 1000 * (1 + Math.random() * 0.25)); // at least SEND_DELAY_SECONDS, plus a little random extra (looks human)
       }
       if (r === 'failed') result.failed++;
     }

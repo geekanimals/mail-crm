@@ -308,7 +308,7 @@ export default function ImportPage() {
     a.click();
   };
 
-  const preview = file ? people().slice(0, 5) : [];
+  const preview = file ? people() : []; // every row from the file
   const nextFor = (p) => {
     const st = parseStage(p.status, fixed);
     if (st.error) return { text: `Unknown status "${p.status}"`, bad: true };
@@ -457,6 +457,9 @@ export default function ImportPage() {
           )}
 
           {map.email !== undefined && (
+            <div className="im-count">All {num(preview.length)} people from the file{preview.filter((p) => !p.email).length ? ` · ${preview.filter((p) => !p.email).length} without email (skipped)` : ''}</div>
+          )}
+          {map.email !== undefined && (
             <div className="table-wrap im-preview">
               {mode === 'continue' ? (
               <table>
@@ -493,7 +496,7 @@ export default function ImportPage() {
                 </tbody>
               </table>
               )}
-              {mode === 'continue' && file.rows.length > 5 && <p className="small muted im-note">Showing the first 5 of {num(file.rows.length)} people.</p>}
+
             </div>
           )}
 
@@ -595,7 +598,9 @@ const css = `
 .im-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; margin-bottom: 16px; }
 .im-found { background: rgba(22,163,74,.1); color: #166534; padding: 12px 14px; border-radius: 10px; margin-bottom: 16px; font-size: 13.5px; }
 .im-found.none { background: rgba(249,115,22,.1); color: #9a3412; }
-.im-preview { margin-bottom: 16px; }
+.im-preview { margin-bottom: 16px; max-height: 460px; overflow: auto; border: 1px solid rgba(148,163,184,.22); border-radius: 12px; }
+.im-preview thead th { position: sticky; top: 0; z-index: 1; background: #f4fbfd; }
+.im-count { font-size: 13px; font-weight: 600; color: var(--c-700); margin: 0 0 8px; }
 .im-cell { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .im-note { margin-top: 12px; }
 .im-modes { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }

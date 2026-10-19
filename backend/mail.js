@@ -1,11 +1,7 @@
 // Building and sending emails over SMTP.
 import crypto from 'node:crypto';
 import nodemailer from 'nodemailer';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { SIGNATURE, SIGNATURE_HTML, SIGNATURE_LOGO } from './templates.js';
-
-const LOGO_PATH = path.join(path.dirname(fileURLToPath(import.meta.url)), 'assets', SIGNATURE_LOGO);
+import { SIGNATURE } from './templates.js';
 import { config, smtpReady } from './config.js';
 
 export const escapeHtml = (s = '') =>
@@ -66,9 +62,12 @@ export function buildEmail(contact, subject, body, trackingId, prev, { signature
         .join('');
   let text = (isHtml ? core.replace(/<br\s*\/?>/gi, '\n').replace(/<\/p>/gi, '\n\n').replace(/<[^>]+>/g, '') : fill(raw, contact)).trim();
 
-  // designed footer with the logo (Aanchal Ara ...)
+  // signature (Best regards, Aanchal Ara ...) - plain text, same style as the message
   if (signature) {
-    core += SIGNATURE_HTML;
+    core += escapeHtml(SIGNATURE.trim())
+      .split(/\n{2,}/)
+      .map((p) => `<p style="margin:0 0 14px">${p.replace(/\n/g, '<br>')}</p>`)
+      .join('');
     text += `\n\n${SIGNATURE.trim()}`;
   }
 
@@ -117,10 +116,6 @@ export async function sendMail({ to, name, email, threadIds = [], unsub, cc = []
     from: { name: config.fromName, address: config.fromEmail },
     to: name ? { name, address: to } : to,
     cc: cc.length ? cc : undefined,
-    // the signature logo travels inside the email (also needed for quoted earlier emails)
-    attachments: email.html?.includes('cid:geek-signature-logo')
-      ? [{ filename: 'geek.png', path: LOGO_PATH, cid: 'geek-signature-logo', contentDisposition: 'inline' }]
-      : undefined,
     replyTo: config.replyTo || undefined,
     subject: email.subject,
     html: email.html,
