@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="180" height="40" viewBox="0 0 180 40" fill="none">
+  <!-- Placeholder logo: replace this file (public/logo.svg) with your agency logo, or set NEXT_PUBLIC_LOGO_URL -->
+  <rect x="2" y="4" width="32" height="32" rx="9" fill="#32C1DF"/>
+  <path d="M25.5 13.5 11 19.2l5.6 2.2 2.2 5.6 6.7-13.5Z" fill="#fff"/>
+  <path d="m16.6 21.4 3.8-3.8" stroke="#32C1DF" stroke-width="1.6" stroke-linecap="round"/>
+  <text x="44" y="27" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="20" font-weight="700" fill="#0F172A">Geek <tspan fill="#32C1DF">CRM</tspan></text>
+</svg>
