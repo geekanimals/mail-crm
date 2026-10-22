@@ -5,6 +5,9 @@ export const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:500
 
 export const getToken = () => (typeof window === 'undefined' ? null : localStorage.getItem('geek_token'));
 export const setToken = (t) => (t ? localStorage.setItem('geek_token', t) : localStorage.removeItem('geek_token'));
+// admin | team | client - decides where the person lands after login
+export const getRole = () => (typeof window === 'undefined' ? null : localStorage.getItem('geek_role') || 'admin');
+export const setRole = (r) => (r ? localStorage.setItem('geek_role', r) : localStorage.removeItem('geek_role'));
 
 /** api('/api/contacts', { method: 'POST', body: {...}, query: {...} }) */
 export async function api(path, { method = 'GET', body, query } = {}) {

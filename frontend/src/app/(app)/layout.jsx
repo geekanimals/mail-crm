@@ -4,14 +4,16 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
-import { LuBan, LuBell, LuCheck, LuFileSpreadsheet, LuLayoutDashboard, LuLogOut, LuMenu, LuReply, LuSend, LuSettings, LuUsers, LuX } from 'react-icons/lu';
-import { api, getToken, setToken } from '@/lib/api';
+import { LuBan, LuBell, LuCheck, LuFileSpreadsheet, LuKanban, LuLayoutDashboard, LuLogOut, LuMenu, LuReply, LuSend, LuSettings, LuUserCog, LuUsers, LuX } from 'react-icons/lu';
+import { api, getToken, setRole, setToken } from '@/lib/api';
 
 const ICON = process.env.NEXT_PUBLIC_LOGO_ICON_URL || '/fav.png'; // square logo (always shown)
 const WORDMARK = process.env.NEXT_PUBLIC_BRAND_LOGO_URL || '/logo.png'; // brand name, next to the logo when the sidebar opens
 const MENU = [
   ['/', 'Dashboard', LuLayoutDashboard],
   ['/contacts', 'Contacts', LuUsers],
+  ['/pipeline', 'Pipeline', LuKanban],
+  ['/team', 'Team', LuUserCog],
   ['/import', 'Import', LuFileSpreadsheet],
   ['/campaigns', 'Campaigns', LuSend],
   ['/replies', 'Replies', LuReply],
@@ -36,7 +38,13 @@ export default function AppLayout({ children }) {
       router.replace('/login');
       return;
     }
-    api('/api/auth/me').then((r) => setUser(r.user)).catch(() => router.replace('/login'));
+    api('/api/auth/me')
+      .then((r) => {
+        setRole(r.role);
+        if (r.role !== 'admin') router.replace('/portal'); // team members & clients have their own page
+        else setUser(r.user);
+      })
+      .catch(() => router.replace('/login'));
   }, [router]);
 
   // badges: new replies (sidebar) + unread notifications (bell). Refresh on page change and every 60 s.
@@ -116,6 +124,7 @@ export default function AppLayout({ children }) {
 
   const logout = () => {
     setToken(null);
+    setRole(null);
     router.replace('/login');
   };
 

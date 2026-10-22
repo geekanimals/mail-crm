@@ -1,9 +1,9 @@
 'use client';
-// Login page - ID & password are checked by the backend against ADMIN_USERNAME / ADMIN_PASSWORD in .env
+// Login page - admin (ID & password from .env), team members and clients (email + password made by the admin)
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { LuBan, LuEye, LuEyeOff, LuLock, LuReply, LuRefreshCw, LuSend, LuUser } from 'react-icons/lu';
-import { api, setToken } from '@/lib/api';
+import { api, setRole, setToken } from '@/lib/api';
 
 const LOGO = process.env.NEXT_PUBLIC_LOGO_URL || '/fav.png';
 
@@ -21,7 +21,8 @@ export default function LoginPage() {
     try {
       const r = await api('/api/auth/login', { method: 'POST', body: form });
       setToken(r.token);
-      router.replace('/');
+      setRole(r.role);
+      router.replace(r.role === 'admin' ? '/' : '/portal');
     } catch (err) {
       setError(err.message);
       setBusy(false);
@@ -46,10 +47,10 @@ export default function LoginPage() {
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={LOGO} alt="Logo" className="login-logo" />
           <h1>Welcome to Geek</h1>
-          <p>Sign in with your Geek ID</p>
+          <p>Sign in with your Geek ID or email</p>
           {error && <div className="login-error">{error}</div>}
           <label>
-            Geek ID
+            Geek ID / Email
             <div className="inp"><LuUser />
             <input value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} autoComplete="username" required autoFocus />
             </div>

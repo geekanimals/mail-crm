@@ -1,10 +1,11 @@
 // The automation: sends due emails every minute and checks the inbox for replies.
 import crypto from 'node:crypto';
+import mongoose from 'mongoose';
 import cron from 'node-cron';
 import { ImapFlow } from 'imapflow';
 import { simpleParser } from 'mailparser';
 import { config, imapReady, smtpReady } from './config.js';
-import { Campaign, Contact, EmailLog, Enrollment, Reply, Suppression, getSetting, setSetting, remember, notify } from './models.js';
+import { Campaign, Contact, EmailLog, Enrollment, Reply, Suppression, bumpStage, getSetting, setSetting, remember, notify, upsertCompany } from './models.js';
 import { buildEmail, sendMail, isBadAddress, parseCc, unsubscribeUrl } from './mail.js';
 import { FOLLOW_UPS, SIGNATURE, SIGNATURE_KEY } from './templates.js';
 
@@ -71,8 +72,48 @@ export async function markReplied(contact, { enrollment, from, subject, snippet,
   }
   await stopAll(contact._id, 'replied');
   await Contact.updateOne({ _id: contact._id, status: { $nin: ['unsubscribed', 'bounced'] } }, { $set: { status: 'replied', repliedAt: at } });
-  await Reply.create({ contact: contact._id, campaign: enr?.campaign, afterStep: enr?.step, from: from || contact.email, subject, snippet, messageId, receivedAt: at });
+  try {
+    await Reply.create({ contact: contact._id, campaign: enr?.campaign, afterStep: enr?.step, from: from || contact.email, subject, snippet, messageId, receivedAt: at });
+  } catch (e) {
+    if (e?.code === 11000) return; // the same email was already saved (e.g. by another server) - no second copy, no second alert
+    throw e;
+  }
   await notify('replied', contact, { campaign: enr?.campaign, step: enr?.step, text: snippet || subject || '' });
+  await movePipeline(contact).catch((e) => console.error('[pipeline]', e.message));
+}
+
+/** A reply moves the company forward: first reply -> Hot lead, replies again (conversation going) -> Opportunity */
+async function movePipeline(contact) {
+  let companyId = contact.companyId;
+  if (!companyId && contact.company) {
+    const c = await upsertCompany(contact.company, {});
+    companyId = c?._id;
+    if (companyId) await Contact.updateOne({ _id: contact._id }, { $set: { companyId } });
+  }
+  if (!companyId) return;
+  await bumpStage(companyId, await stageFromReplies(companyId));
+}
+
+// real replies (not out-of-office, not "unsubscribe") from people of this company
+async function stageFromReplies(companyId) {
+  const people = await Contact.find({ companyId, status: 'replied' }).select('_id').lean();
+  if (!people.length) return null;
+  const replies = await Reply.countDocuments({ contact: { $in: people.map((p) => p._id) }, isAutoReply: false });
+  return Math.max(replies, 1) >= 2 ? 'opportunity' : 'hot';
+}
+
+/** Run at start: companies whose people already replied before this feature existed get their stage too. */
+export async function syncPipeline() {
+  const ids = await Contact.distinct('companyId', { status: 'replied', companyId: { $exists: true } });
+  let moved = 0;
+  for (const id of ids) {
+    const stage = await stageFromReplies(id);
+    const before = (await mongoose.connection.collection('companies').findOne({ _id: id }, { projection: { stage: 1 } }))?.stage;
+    await bumpStage(id, stage);
+    const after = (await mongoose.connection.collection('companies').findOne({ _id: id }, { projection: { stage: 1 } }))?.stage;
+    if (before !== after) moved++;
+  }
+  return moved;
 }
 
 export async function markUnsubscribed(contact) {
@@ -91,7 +132,7 @@ async function markBounced(contact) {
 
 /* ---------------- add contacts to a campaign ---------------- */
 export async function enroll(campaign, { contactIds, batch, onlyNew = true } = {}) {
-  const filter = { status: onlyNew ? 'new' : { $in: ['new', 'contacted'] } };
+  const filter = { status: onlyNew ? 'new' : { $in: ['new', 'contacted'] }, email: { $type: 'string' } };
   if (contactIds?.length) filter._id = { $in: contactIds };
   if (batch) filter.batch = batch;
   const ids = (await Contact.find(filter).select('_id').lean()).map((c) => c._id);
@@ -288,13 +329,23 @@ const AUTO_RE = /(out of (the )?office|automatic reply|auto[- ]?reply|away from|
 const UNSUB_RE = /^\W*(please\s+)?(unsubscribe|remove me|take me off|stop (emailing|sending)|not interested|no thanks|no thank you|do not (email|contact) me|don't (email|contact) me)\b/i;
 const BOUNCE_RE = /(mailer-daemon|postmaster|undeliverable|delivery status notification|failure notice|returned mail|delivery failed)/i;
 
-function newText(text = '') {
+/** Only the new part of a reply - the quoted earlier emails (Gmail, Outlook, Apple Mail) are cut off. */
+export function newText(text = '') {
+  const lines = String(text).replace(/\r/g, '').split('\n');
   const out = [];
-  for (const line of String(text).split(/\r?\n/)) {
-    if (/^>/.test(line) || /^On .+wrote:\s*$/i.test(line) || /^-+\s*Original Message/i.test(line)) break;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (
+      /^\s*>/.test(line) || // > quoted
+      (/^\s*On\b/i.test(line) && /\bwrote:\s*$/i.test(lines.slice(i, i + 3).join(' '))) || // Gmail "On ... wrote:" (may wrap over 2-3 lines)
+      /^\s*-{2,}\s*(Original|Forwarded) Message/i.test(line) ||
+      /^\s*_{8,}\s*$/.test(line) || // Outlook ________
+      (/^\s*From:\s/i.test(line) && /\b(Sent|Date):\s/i.test(`${lines[i + 1] || ''} ${lines[i + 2] || ''}`)) || // Outlook header block
+      /^\s*Sent from my (iPhone|iPad|Android|Samsung|mobile)/i.test(line)
+    ) break;
     out.push(line);
   }
-  return out.join('\n').trim().slice(0, 1000);
+  return out.join('\n').replace(/\n{3,}/g, '\n\n').trim().slice(0, 2000);
 }
 
 let inflight = null;
@@ -390,13 +441,13 @@ async function handleMessage(client, m) {
 
   if (isAuto) {
     // out-of-office: keep the sequence going
-    await Reply.create({ contact: contact._id, campaign: log?.campaign, from, subject, snippet: newText(parsed.text), messageId: env.messageId, isAutoReply: true, handled: true, receivedAt: at });
+    await Reply.create({ contact: contact._id, campaign: log?.campaign, from, subject, snippet: newText(parsed.text), messageId: env.messageId, isAutoReply: true, handled: true, receivedAt: at }).catch((e) => { if (e?.code !== 11000) throw e; });
     return false;
   }
   // "unsubscribe" / "not interested" / Gmail's Unsubscribe button -> never email again
   const said = newText(parsed.text);
   if (/^\s*unsubscribe\b/i.test(cleanSubject(subject)) || UNSUB_RE.test(said)) {
-    await Reply.create({ contact: contact._id, campaign: log?.campaign, from, subject, snippet: said || 'Unsubscribe', messageId: env.messageId, handled: true, receivedAt: at });
+    await Reply.create({ contact: contact._id, campaign: log?.campaign, from, subject, snippet: said || 'Unsubscribe', messageId: env.messageId, handled: true, receivedAt: at }).catch((e) => { if (e?.code !== 11000) throw e; });
     await markUnsubscribed(contact);
     return true;
   }

@@ -3,7 +3,7 @@ import { Router } from 'express';
 import { config, imapReady, smtpReady } from '../config.js';
 import { Campaign, Contact, EmailLog, Enrollment, Notification, Reply, Suppression, getSetting, setSetting } from '../models.js';
 import { parseCc, sendMail, verifySmtp } from '../mail.js';
-import { checkReplies, globalCc, inSendWindow, sentLastHour, runQueue, sentToday, startOfToday, status } from '../worker.js';
+import { checkReplies, globalCc, newText, inSendWindow, sentLastHour, runQueue, sentToday, startOfToday, status } from '../worker.js';
 import { campaignStats } from './campaigns.js';
 import { ah, checkId, fail, pct, validEmail } from '../utils.js';
 
@@ -68,10 +68,19 @@ router.get(
 router.get(
   '/replies',
   ah(async (req, res) => {
-    const filter = { isAutoReply: false };
-    if (req.query.handled === 'true') filter.handled = true;
-    if (req.query.handled === 'false') filter.handled = false;
-    res.json(await Reply.find(filter).sort({ receivedAt: -1 }).limit(200).populate('contact', 'name email company').populate('campaign', 'name').lean());
+    const filter = { isAutoReply: req.query.type === 'auto' };
+    if (req.query.type !== 'auto') {
+      if (req.query.handled === 'true') filter.handled = true;
+      if (req.query.handled === 'false') filter.handled = false;
+    }
+    const [list, autoCount] = await Promise.all([
+      Reply.find(filter).sort({ receivedAt: -1 }).limit(200)
+        .populate({ path: 'contact', select: 'name email company title companyId', populate: { path: 'companyId', select: 'name stage' } })
+        .populate('campaign', 'name').lean(),
+      Reply.countDocuments({ isAutoReply: true }),
+    ]);
+    res.set('X-Auto-Replies', String(autoCount));
+    res.json(list.filter((r) => r.contact).map((r) => ({ ...r, snippet: newText(r.snippet) || r.snippet }))); // only the new text, no quoted thread
   })
 );
 router.post(

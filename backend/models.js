@@ -6,33 +6,133 @@ const { Schema, model } = mongoose;
 const id = Schema.Types.ObjectId;
 mongoose.set('strictQuery', true);
 
-// A person you can email
-export const Contact = model(
-  'Contact',
+// A person (a contact point). Email is optional - old leads may only have a phone / LinkedIn.
+const contactSchema = new Schema(
+  {
+    email: { type: String, lowercase: true, trim: true },
+    name: { type: String, default: '' },
+    company: { type: String, default: '' }, // company name as written in the sheet
+    companyId: { type: id, ref: 'Company', index: true }, // the company / account this person belongs to
+    title: { type: String, default: '' }, // designation
+    phone: { type: String, default: '' },
+    linkedin: { type: String, default: '' },
+    website: { type: String, default: '' },
+    industry: { type: String, default: '' },
+    location: { type: String, default: '' },
+    signal: { type: String, default: '' }, // buying signal
+    notes: { type: String, default: '' }, // remarks
+    leadDate: { type: String, default: '' },
+    source: { type: String, default: '' }, // which file / sheet it came from
+    // every column from the uploaded sheet, exactly as it was (A to Z)
+    fields: [{ _id: false, k: String, v: String }],
+    customSubject: { type: String, default: '' }, // ready-written first email from CSV (e.g. ClientMagnet)
+    customBody: { type: String, default: '' },
+    // Your own written emails for this person, from the CSV / Excel file.
+    // messages[0] = first email, messages[1] = follow-up 1 ... day = days after the first email
+    messages: [{ _id: false, subject: String, body: String, day: Number }],
+    batch: { type: String, default: '', index: true },
+    status: { type: String, enum: ['new', 'contacted', 'replied', 'unsubscribed', 'bounced'], default: 'new', index: true },
+    unsubscribeToken: { type: String, unique: true, default: () => crypto.randomBytes(24).toString('hex') },
+    lastContactedAt: Date,
+    repliedAt: Date,
+  },
+  {
+    timestamps: true,
+    toJSON: { transform: (_d, r) => (delete r.unsubscribeToken, delete r.__v, r) },
+  }
+);
+// unique email, but many people may have no email
+contactSchema.index({ email: 1 }, { unique: true, partialFilterExpression: { email: { $type: 'string' } } });
+export const Contact = model('Contact', contactSchema);
+
+// A company / brand / account. stage = where it is in the pipeline.
+export const STAGES = ['cold', 'hot', 'opportunity', 'account', 'old_client'];
+export const STAGE_RANK = { cold: 0, hot: 1, opportunity: 2, account: 3, old_client: 3 };
+export const companyKey = (name) =>
+  String(name || '').toLowerCase().replace(/&/g, ' and ').replace(/\b(pvt|private|ltd|limited|llp|inc|co)\b\.?/g, ' ').replace(/[^a-z0-9]+/g, ' ').trim();
+export const Company = model(
+  'Company',
   new Schema(
     {
-      email: { type: String, required: true, unique: true, lowercase: true, trim: true },
-      name: { type: String, default: '' },
-      company: { type: String, default: '' },
-      phone: { type: String, default: '' },
+      name: { type: String, required: true, trim: true },
+      key: { type: String, unique: true }, // name in lowercase, used to avoid duplicates
+      website: { type: String, default: '' },
+      industry: { type: String, default: '' },
       location: { type: String, default: '' },
-      customSubject: { type: String, default: '' }, // ready-written first email from CSV (e.g. ClientMagnet)
-      customBody: { type: String, default: '' },
-      // Your own written emails for this person, from the CSV / Excel file.
-      // messages[0] = first email, messages[1] = follow-up 1 ... day = days after the first email
-      messages: [{ _id: false, subject: String, body: String, day: Number }],
-      batch: { type: String, default: '', index: true },
-      status: { type: String, enum: ['new', 'contacted', 'replied', 'unsubscribed', 'bounced'], default: 'new', index: true },
-      unsubscribeToken: { type: String, unique: true, default: () => crypto.randomBytes(24).toString('hex') },
-      lastContactedAt: Date,
-      repliedAt: Date,
+      linkedin: { type: String, default: '' },
+      stage: { type: String, enum: STAGES, default: 'cold', index: true },
+      owner: { type: String, default: '' }, // team member responsible
+      source: { type: String, default: '' },
+      notes: { type: String, default: '' },
+      // work assigned to team members on this account
+      tasks: [{ member: String, task: String, done: { type: Boolean, default: false }, updatedAt: { type: Date, default: () => new Date() } }],
+      fields: [{ _id: false, k: String, v: String }], // original sheet row
     },
-    {
-      timestamps: true,
-      toJSON: { transform: (_d, r) => (delete r.unsubscribeToken, delete r.__v, r) },
-    }
+    { timestamps: true }
   )
 );
+
+/* ---------- logins for team members and clients (the admin login stays in .env) ---------- */
+export const User = model(
+  'User',
+  new Schema(
+    {
+      name: { type: String, required: true, trim: true },
+      email: { type: String, required: true, unique: true, lowercase: true, trim: true }, // login ID
+      role: { type: String, enum: ['team', 'client'], required: true, index: true },
+      title: { type: String, default: '' }, // e.g. "Account manager" (team) or the client's designation
+      companyId: { type: id, ref: 'Company', index: true }, // clients: their account
+      passwordHash: { type: String, required: true },
+      active: { type: Boolean, default: true },
+      lastLoginAt: Date,
+    },
+    { timestamps: true, toJSON: { transform: (_d, r) => (delete r.passwordHash, delete r.__v, r) } }
+  )
+);
+export function hashPassword(pw) {
+  const salt = crypto.randomBytes(16).toString('hex');
+  return `scrypt:${salt}:${crypto.scryptSync(String(pw), salt, 64).toString('hex')}`;
+}
+export function checkPassword(pw, stored) {
+  const [, salt, hash] = String(stored || '').split(':');
+  if (!salt || !hash) return false;
+  const a = Buffer.from(hash, 'hex');
+  const b = crypto.scryptSync(String(pw), salt, 64);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
+/** Move a company forward in the pipeline (never backwards). */
+export async function bumpStage(companyId, stage) {
+  if (!companyId || !STAGES.includes(stage)) return;
+  const c = await Company.findById(companyId);
+  if (c && STAGE_RANK[stage] > STAGE_RANK[c.stage]) {
+    c.stage = stage;
+    await c.save();
+  }
+}
+
+/** Find a company by name or create it. Fills empty details; moves the stage forward, never back. */
+export async function upsertCompany(name, data = {}) {
+  const key = companyKey(name);
+  if (!key) return null;
+  let c = await Company.findOne({ key });
+  if (!c) {
+    try {
+      return await Company.create({ ...data, name: String(name).trim().slice(0, 200), key, stage: STAGES.includes(data.stage) ? data.stage : 'cold' });
+    } catch (e) {
+      if (e?.code !== 11000) throw e;
+      c = await Company.findOne({ key });
+    }
+  }
+  for (const k of ['website', 'industry', 'location', 'linkedin', 'source']) if (!c[k] && data[k]) c[k] = data[k];
+  if (data.owner && !c.owner) c.owner = data.owner;
+  if (data.notes) c.notes = c.notes ? (c.notes.includes(data.notes) ? c.notes : `${c.notes}\n${data.notes}`) : data.notes;
+  if (STAGES.includes(data.stage) && STAGE_RANK[data.stage] > STAGE_RANK[c.stage]) c.stage = data.stage;
+  if (data.tasks?.length) c.tasks.push(...data.tasks.filter((t) => !c.tasks.some((x) => x.member === t.member && x.task === t.task)));
+  if (data.fields?.length && !c.fields?.length) c.fields = data.fields;
+  await c.save();
+  return c;
+}
 
 // First email + follow-ups
 export const Campaign = model(
@@ -96,21 +196,21 @@ export const EmailLog = model(
 );
 
 // Replies found in the inbox
-export const Reply = model(
-  'Reply',
-  new Schema({
+const replySchema = new Schema({
     contact: { type: id, ref: 'Contact' },
     campaign: { type: id, ref: 'Campaign' },
     afterStep: Number,
     from: String,
     subject: String,
     snippet: String,
-    messageId: { type: String, index: true },
+    messageId: { type: String },
     isAutoReply: { type: Boolean, default: false },
     handled: { type: Boolean, default: false },
     receivedAt: { type: Date, default: () => new Date(), index: true },
-  })
-);
+});
+// one email = one reply, even when two servers check the same inbox at the same time
+replySchema.index({ messageId: 1 }, { unique: true, partialFilterExpression: { messageId: { $type: 'string' } } });
+export const Reply = model('Reply', replySchema);
 
 // Small key/value store (pause switch, IMAP position)
 const Setting = model('Setting', new Schema({ key: { type: String, unique: true }, value: Schema.Types.Mixed }));

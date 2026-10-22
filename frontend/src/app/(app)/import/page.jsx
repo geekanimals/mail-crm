@@ -11,15 +11,24 @@ import { useEffect, useState } from 'react';
 import { LuCalendarDays, LuDownload, LuFileSpreadsheet, LuPlay, LuUpload } from 'react-icons/lu';
 import { api, num, notify } from '@/lib/api';
 
+// [key, label, rules tried in order, never these] - e.g. "company_name" is never taken as the person's name
 const BASIC = [
-  ['email', 'Email *', /e-?mail|recipient/i],
-  ['name', 'Name', /name/i],
-  ['company', 'Company', /company|organi|business|brand/i],
-  ['phone', 'Phone', /phone|mobile|whatsapp/i],
-  ['location', 'Location', /city|location|country/i],
-  ['status', 'Status', /status|stage/i],
-  ['lastSent', 'Last email sent on', /last|sent.?(on|date)|date/i],
+  ['email', 'Email *', [/^(dm_)?e-?mail$/i, /e-?mail|recipient/i], /company|sent|date|source|subject|body/i],
+  ['name', 'Name', [/^(dm_)?name$/i, /^(contact|person|full|lead|dm).*name/i, /^name/i, /\bname\b/i], /company|brand|organi|business|file|campaign/i],
+  ['company', 'Company', [/^company(_| )?name$/i, /^company$/i, /^brand(_| )?name/i, /company|organi|business|brand/i], /contact|linkedin|size|url|phone/i],
+  ['title', 'Designation', [/^dm_title$/i, /designation/i, /^(job )?title$/i, /position/i], /role_title|subject|page/i],
+  ['phone', 'Phone', [/^(dm_)?phone$/i, /^mobile/i, /phone|mobile|whatsapp/i], /company contact/i],
+  ['linkedin', 'LinkedIn', [/^dm_linkedin$/i, /^linkedin$/i, /linkedin(?!.*(url|company|sent|connection))/i], /company|sent|date/i],
+  ['website', 'Website', [/^website$/i, /website|domain/i], /linkedin|job/i],
+  ['industry', 'Industry', [/^industry$/i, /industry|category|sector/i], /$^/],
+  ['location', 'Location', [/^location$/i, /city|location|country|hq/i], /$^/],
+  ['signal', 'Buying signal', [/buying signal/i, /^signal$/i], /$^/],
+  ['notes', 'Notes / remarks', [/^remarks?$/i, /^notes?$/i], /$^/],
+  ['leadDate', 'Lead date', [/lead date/i, /date_added|date added/i], /$^/],
+  ['status', 'Status', [/^status$/i, /status|stage/i], /$^/],
+  ['lastSent', 'Last email sent on', [/sent.?(on|date)/i, /^last/i], /$^/],
 ];
+const STAGES = [['cold', 'Cold lead'], ['hot', 'Hot lead'], ['opportunity', 'Opportunity'], ['account', 'Account'], ['old_client', 'Old client']];
 
 /* ---------- CSV ---------- */
 function parseCSV(text) {
@@ -181,6 +190,7 @@ export default function ImportPage() {
   const [cc, setCc] = useState('');
   const [ownFollowUps, setOwnFollowUps] = useState(false);
   const [today, setToday] = useState(null);
+  const [pstage, setPstage] = useState('cold'); // pipeline stage for the companies in this upload
 
   useEffect(() => {
     api('/api/campaigns').then((l) => setCampaigns(l.filter((c) => c.status !== 'completed'))).catch(() => {});
@@ -207,9 +217,11 @@ export default function ImportPage() {
       const msgs = findMessageColumns(headers, mode === 'continue');
       const used = new Set(msgs.flatMap((m) => [m.subject, m.body, m.day]).filter((x) => x !== undefined));
       const m = {};
-      for (const [key, , re] of BASIC) {
-        const i = headers.findIndex((h, idx) => !used.has(idx) && re.test(h));
-        if (i >= 0) { m[key] = i; used.add(i); }
+      for (const [key, , rules, not] of BASIC) {
+        for (const re of rules) {
+          const i = headers.findIndex((h, idx) => !used.has(idx) && re.test(h) && !not.test(h));
+          if (i >= 0) { m[key] = i; used.add(i); break; }
+        }
       }
       // the email column must contain addresses
       const looksEmail = (i) => rows.slice(0, 10).some((r) => /^\S+@\S+\.\S+$/.test(String(r[i] || '').trim()));
@@ -228,10 +240,13 @@ export default function ImportPage() {
   };
 
   const cell = (r, i) => (i === undefined ? '' : String(r[i] ?? '').trim());
+  const msgIdx = new Set(msgCols.flatMap((m) => [m.subject, m.body, m.day]).filter((x) => x !== undefined));
   const people = () =>
     file.rows.map((r) => {
       const o = Object.fromEntries(BASIC.filter(([k]) => map[k] !== undefined).map(([k]) => [k, cell(r, map[k])]));
       o.firstSubject = msgCols[0] ? cell(r, msgCols[0].subject) : '';
+      // every column of the sheet, saved with the contact (A to Z)
+      o.fields = file.headers.map((k, i) => ({ k: k || `Column ${i + 1}`, v: cell(r, i) })).filter((f) => f.v && !msgIdx.has(file.headers.indexOf(f.k)));
       o.messages = (ownFollowUps ? msgCols : msgCols.slice(0, 1))
         .map((m) => ({ subject: cell(r, m.subject), body: cell(r, m.body), day: m.day !== undefined && cell(r, m.day) !== '' ? Number(cell(r, m.day)) : undefined }))
         .filter((x) => x.body);
@@ -245,7 +260,7 @@ export default function ImportPage() {
     let cid = campaignId;
     try {
       for (let i = 0; i < all.length; i += 500) {
-        const r = await api('/api/contacts/import', { method: 'POST', body: { rows: all.slice(i, i + 500), batch, campaignId: cid || undefined, startNow, gapDays: gap, cc } });
+        const r = await api('/api/contacts/import', { method: 'POST', body: { rows: all.slice(i, i + 500), batch, campaignId: cid || undefined, startNow, gapDays: gap, cc, stage: pstage } });
         for (const k in total) total[k] += r[k] || 0;
         if (r.campaignId) cid = r.campaignId; // later chunks go into the same campaign
       }
@@ -260,20 +275,17 @@ export default function ImportPage() {
 
   const runContinue = async () => {
     setBusy(true);
-    const all = file.rows.map((r) => ({
-      email: cell(r, map.email),
-      name: cell(r, map.name),
-      company: cell(r, map.company),
-      status: cell(r, map.status),
-      lastSent: cell(r, map.lastSent),
-      subject: msgCols[0] ? cell(r, msgCols[0].subject) : '',
-      body: msgCols[0] ? cell(r, msgCols[0].body) : '',
+    const all = people().map((p, i) => ({
+      ...p,
+      subject: msgCols[0] ? cell(file.rows[i], msgCols[0].subject) : '',
+      body: msgCols[0] ? cell(file.rows[i], msgCols[0].body) : '',
+      messages: undefined,
     }));
     const total = { started: 0, fresh: 0, finished: 0, stopped: 0, skipped: 0, invalid: 0, errors: [] };
     let cid;
     try {
       for (let i = 0; i < all.length; i += 500) {
-        const r = await api('/api/contacts/import-continue', { method: 'POST', body: { rows: all.slice(i, i + 500), batch, gapDays: gap, cc, campaignId: cid } });
+        const r = await api('/api/contacts/import-continue', { method: 'POST', body: { rows: all.slice(i, i + 500), batch, gapDays: gap, cc, campaignId: cid, stage: pstage } });
         for (const k of ['started', 'fresh', 'finished', 'stopped', 'skipped', 'invalid']) total[k] += r[k] || 0;
         total.errors.push(...(r.errors || []));
         if (r.campaignId) cid = r.campaignId;
@@ -347,18 +359,20 @@ export default function ImportPage() {
             ? 'File mein sirf first email likho. Follow-ups fixed hain (sirf naam + company badlega). Reply aate hi aage ka koi mail nahi jayega.'
             : 'Jinko pehle mail ja chuka hai: status likho (first sent / followup 2 sent …), agla follow-up wahi se jayega.'}</p>
         </div>
-        <button className="btn soft" onClick={sample}><LuDownload /> Download sample</button>
+        {mode !== 'google' && <button className="btn soft" onClick={sample}><LuDownload /> Download sample</button>}
       </div>
 
       <div className="im-modes">
-        {[['fresh', 'Fresh leads', 'New people · first email from your file'], ['continue', 'Already contacted', 'Continue from the next follow-up']].map(([k, t, d]) => (
+        {[['fresh', 'Fresh leads', 'New people · first email from your file'], ['continue', 'Already contacted', 'Continue from the next follow-up'], ['google', 'Google Sheet (old data)', 'Old leads, opportunities, accounts · no emails sent']].map(([k, t, d]) => (
           <button key={k} className={mode === k ? 'on' : ''} onClick={() => { setMode(k); setFile(null); setResult(null); }}>
             <b>{t}</b><span>{d}</span>
           </button>
         ))}
       </div>
 
-      {!file && (
+      {mode === 'google' && <GoogleImport />}
+
+      {mode !== 'google' && !file && (
         <>
           <label className="card im-drop" onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); onFile(e.dataTransfer.files[0]); }}>
             <span className="im-icon"><LuFileSpreadsheet /></span>
@@ -420,11 +434,11 @@ export default function ImportPage() {
         </>
       )}
 
-      {file && (
+      {mode !== 'google' && file && (
         <div className="card">
           <h2>{file.name} · {num(file.rows.length)} people</h2>
           <div className="im-grid">
-            {BASIC.filter(([k]) => (mode === 'continue' ? !['phone', 'location'].includes(k) : k !== 'lastSent')).map(([key, label]) => (
+            {BASIC.filter(([k]) => mode === 'continue' || k !== 'lastSent').map(([key, label]) => (
               <label className="field" key={key}>
                 {mode === 'continue' && key === 'status' ? 'Status (already sent) *' : mode === 'fresh' && key === 'status' ? 'Previous status' : label}
                 <select value={map[key] ?? ''} onChange={(e) => setMap({ ...map, [key]: e.target.value === '' ? undefined : Number(e.target.value) })}>
@@ -528,6 +542,12 @@ export default function ImportPage() {
 
           <div className="im-grid">
             <label className="field">Name for this upload<input value={batch} onChange={(e) => setBatch(e.target.value)} /></label>
+            <label className="field">
+              Pipeline stage (companies)
+              <select value={pstage} onChange={(e) => setPstage(e.target.value)}>
+                {STAGES.map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+              </select>
+            </label>
             {mode === 'fresh' && <label className="field">
               Add to an existing campaign (optional)
               <select value={campaignId} onChange={(e) => setCampaignId(e.target.value)}>
@@ -589,7 +609,98 @@ export default function ImportPage() {
   );
 }
 
+/* ---------- old data from a Google Sheet link (no email is sent) ---------- */
+const KINDS = [
+  ['', 'Detect automatically'],
+  ['leads', 'Leads (name, email, company, status …)'],
+  ['opportunities', 'Opportunities (brand, contact, notes, owner)'],
+  ['accounts', 'Accounts (brand + campaign, a column per team member)'],
+];
+function GoogleImport() {
+  const [url, setUrl] = useState('');
+  const [kind, setKind] = useState('');
+  const [stage, setStage] = useState('');
+  const [job, setJob] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [history, setHistory] = useState([]);
+
+  // follow the import while it runs
+  useEffect(() => {
+    if (!job || job.status !== 'running') return;
+    const t = setTimeout(() => {
+      api(`/api/companies/import/google/${job.id}`)
+        .then((j) => {
+          setJob(j);
+          if (j.status === 'done') {
+            notify('Sheet imported');
+            setHistory((h) => [j, ...h]);
+          }
+          if (j.status === 'error') notify(j.error, 'error');
+        })
+        .catch((e) => notify(e.message, 'error'));
+    }, 1500);
+    return () => clearTimeout(t);
+  }, [job]);
+
+  const start = async (e) => {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      const r = await api('/api/companies/import/google', { method: 'POST', body: { url, kind: kind || undefined, stage: stage || undefined } });
+      setJob({ id: r.jobId, kind: r.kind, status: 'running', done: 0, total: r.rows, result: {} });
+    } catch (err) {
+      notify(err.message, 'error');
+    }
+    setBusy(false);
+  };
+
+  const r = job?.result || {};
+  const pct = job?.total ? Math.round((job.done / job.total) * 100) : 0;
+  const LABELS = { newContacts: 'New contacts', updatedContacts: 'Contacts updated', withoutEmail: 'Without email (saved)', companies: 'Companies', opportunities: 'Opportunities', accounts: 'Accounts', tasks: 'Team tasks', skipped: 'Skipped (empty rows)' };
+
+  return (
+    <>
+      <form className="card im-google" onSubmit={start}>
+        <h2>Import old data from Google Sheets</h2>
+        <p className="muted small">Paste the link of <b>one tab</b> (the link changes when you click a tab — it ends with <code>#gid=…</code>). Do it once for each tab: Leads, Opportunity, Accounts. Every column is saved. <b>No email is sent.</b></p>
+        <label className="field">Google Sheet link (this tab)<input required value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://docs.google.com/spreadsheets/d/…/edit#gid=0" /></label>
+        <div className="im-grid">
+          <label className="field">What is in this tab?
+            <select value={kind} onChange={(e) => setKind(e.target.value)}>{KINDS.map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>
+          </label>
+          <label className="field">Pipeline stage for leads
+            <select value={stage} onChange={(e) => setStage(e.target.value)}>
+              <option value="">From the Status column</option>
+              {STAGES.map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+            </select>
+          </label>
+        </div>
+        <p className="small muted">Status column: Converted → Account · Lead / Meeting done / FFU → Hot lead (marked replied, no auto email) · NI → never emailed · rest → Cold lead. The sheet must be shared as &quot;Anyone with the link&quot;.</p>
+        <div className="row"><button className="btn" disabled={busy || job?.status === 'running'}><LuDownload /> {job?.status === 'running' ? 'Importing…' : 'Import this tab'}</button></div>
+        {job && (
+          <div className="im-job">
+            <div className="im-bar"><span style={{ width: `${job.status === 'done' ? 100 : pct}%` }} /></div>
+            <p className="small">{job.status === 'running' ? `Importing ${job.kind}… ${num(job.done)} / ${num(job.total)}` : job.status === 'done' ? `Done — ${job.kind}` : `Error: ${job.error}`}</p>
+            {job.status !== 'running' && (
+              <div className="im-result">
+                {Object.entries(r).map(([k, v]) => <div key={k}><b>{num(v)}</b><span>{LABELS[k] || k}</span></div>)}
+              </div>
+            )}
+          </div>
+        )}
+      </form>
+      {history.length > 1 && <p className="small muted">Imported this session: {history.map((h) => h.kind).join(', ')}</p>}
+      <div className="row"><Link className="btn ghost" href="/pipeline">Open Pipeline →</Link><Link className="btn ghost" href="/contacts">Open Contacts →</Link></div>
+    </>
+  );
+}
+
 const css = `
+.im-google { display: flex; flex-direction: column; gap: 12px; }
+.im-google code { background: #f1f5f9; padding: 1px 6px; border-radius: 6px; }
+.im-job { border: 1px solid rgba(50,193,223,.25); border-radius: 14px; padding: 14px; background: rgba(50,193,223,.05); display: flex; flex-direction: column; gap: 10px; }
+.im-bar { height: 8px; border-radius: 99px; background: rgba(148,163,184,.2); overflow: hidden; }
+.im-bar span { display: block; height: 100%; background: linear-gradient(90deg, #5fd3eb, #1aa9c8); transition: width .4s; }
 .im-drop { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 56px 20px; border: 1.5px dashed var(--c-200); cursor: pointer; text-align: center; }
 .im-drop:hover { border-color: var(--c); background: rgba(255,255,255,.8); box-shadow: 0 14px 40px rgba(50,193,223,.16); }
 .im-icon { width: 64px; height: 64px; border-radius: 20px; background: linear-gradient(150deg, #5fd3eb, #32c1df 55%, #1aa9c8); color: #fff; display: grid; place-items: center; font-size: 28px; box-shadow: 0 10px 24px rgba(50,193,223,.35); margin-bottom: 6px; }
@@ -603,7 +714,7 @@ const css = `
 .im-count { font-size: 13px; font-weight: 600; color: var(--c-700); margin: 0 0 8px; }
 .im-cell { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .im-note { margin-top: 12px; }
-.im-modes { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.im-modes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
 .im-modes button { text-align: left; border: 1px solid rgba(50,193,223,.25); background: rgba(255,255,255,.6); border-radius: 16px; padding: 14px 16px; cursor: pointer; display: flex; flex-direction: column; gap: 2px; font: inherit; color: #334155; transition: all .15s; }
 .im-modes button span { font-size: 12.5px; color: #64748b; }
 .im-modes button:hover { border-color: var(--c); box-shadow: 0 8px 22px rgba(50,193,223,.14); }
