@@ -64,8 +64,10 @@ export const Company = model(
       owner: { type: String, default: '' }, // team member responsible
       source: { type: String, default: '' },
       notes: { type: String, default: '' },
-      // work assigned to team members on this account
+      // accounts: who works on it, what each one has to do, and the conversation about it
+      team: [String], // team member names
       tasks: [{ member: String, task: String, done: { type: Boolean, default: false }, updatedAt: { type: Date, default: () => new Date() } }],
+      messages: [{ author: String, role: { type: String, enum: ['admin', 'team', 'client'] }, text: String, createdAt: { type: Date, default: () => new Date() } }],
       fields: [{ _id: false, k: String, v: String }], // original sheet row
     },
     { timestamps: true }

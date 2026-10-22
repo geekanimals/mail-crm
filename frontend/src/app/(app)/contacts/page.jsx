@@ -13,7 +13,10 @@ const DETAILS = [
   ['title', 'Designation'], ['phone', 'Phone'], ['linkedin', 'LinkedIn'], ['website', 'Website'], ['industry', 'Industry'],
   ['location', 'Location'], ['signal', 'Buying signal'], ['leadDate', 'Lead date'], ['source', 'Source'], ['batch', 'Upload'],
 ];
-const EDITABLE = ['name', 'company', 'title', 'phone', 'linkedin', 'website', 'industry', 'location', 'notes'];
+const EDITABLE = [
+  ['name', 'Name'], ['email', 'Email'], ['company', 'Company'], ['title', 'Designation'], ['phone', 'Phone'], ['linkedin', 'LinkedIn'],
+  ['website', 'Website'], ['industry', 'Industry'], ['location', 'Location'], ['signal', 'Buying signal'], ['leadDate', 'Lead date'], ['notes', 'Notes'],
+];
 // columns from the uploaded sheets that already have their own column in the table
 const CORE = /^(dm_)?(name|e-?mail|phone|mobile|title|designation|linkedin)$|^company(_| )?name$|^company$|^email_(subject|body)$|^(subject|body)(_\d+)?$/i;
 // nicer column names (the CRM only sends emails, so "Email/Linkedin Sent Date" -> "Email Sent Date")
@@ -70,6 +73,11 @@ export default function ContactsPage() {
     setEdit(null);
     api(`/api/contacts/${c._id}`).then(setOpen).catch((e) => notify(e.message, 'error'));
   };
+  const startEdit = () => {
+    const oc = open.contact;
+    setEdit({ ...Object.fromEntries(EDITABLE.map(([k]) => [k, oc[k] || ''])), fields: (oc.fields || []).map((f) => ({ k: f.k, v: f.v })) });
+  };
+  const setField = (i, v) => setEdit({ ...edit, fields: edit.fields.map((f, j) => (j === i ? { ...f, v } : f)) });
   const saveEdit = async (e) => {
     e.preventDefault();
     try {
@@ -208,7 +216,7 @@ export default function ContactsPage() {
                 <p className="muted small">{[oc.title, company?.name || oc.company].filter(Boolean).join(' · ') || 'No company'}</p>
               </div>
               <div className="row">
-                {!edit && <button className="btn ghost sm" onClick={() => setEdit(Object.fromEntries(EDITABLE.map((k) => [k, oc[k] || ''])))}><LuPencil /> Edit</button>}
+                {!edit && <button className="btn ghost sm" onClick={startEdit}><LuPencil /> Edit</button>}
                 <button className="btn ghost sm" onClick={() => setOpen(null)}>Close</button>
               </div>
             </div>
@@ -219,14 +227,30 @@ export default function ContactsPage() {
 
             {edit ? (
               <form className="ct-edit" onSubmit={saveEdit}>
-                {EDITABLE.map((k) => (
-                  <label className="field" key={k}>
-                    {k === 'title' ? 'Designation' : k === 'linkedin' ? 'LinkedIn' : k[0].toUpperCase() + k.slice(1)}
-                    {k === 'notes' ? <textarea rows={3} value={edit[k]} onChange={(e) => setEdit({ ...edit, [k]: e.target.value })} /> : <input value={edit[k]} onChange={(e) => setEdit({ ...edit, [k]: e.target.value })} />}
-                  </label>
-                ))}
-                <div className="row">
-                  <button className="btn sm">Save</button>
+                <div className="ct-editgrid">
+                  {EDITABLE.map(([k, l]) => (
+                    <label className={`field ${k === 'notes' ? 'wide' : ''}`} key={k}>
+                      {l}
+                      {k === 'notes' ? <textarea rows={3} value={edit[k]} onChange={(e) => setEdit({ ...edit, [k]: e.target.value })} /> : <input type={k === 'email' ? 'email' : 'text'} value={edit[k]} onChange={(e) => setEdit({ ...edit, [k]: e.target.value })} />}
+                    </label>
+                  ))}
+                </div>
+                {edit.fields.length > 0 && (
+                  <>
+                    <h3>All details from the sheet</h3>
+                    <p className="muted small">Same columns as your sheet. Name, email, designation etc. stay in step with the details above.</p>
+                    <div className="ct-editgrid">
+                      {edit.fields.map((f, i) => (
+                        <label className="field" key={i}>
+                          {label(f.k)}
+                          <input value={f.v} onChange={(e) => setField(i, e.target.value)} />
+                        </label>
+                      ))}
+                    </div>
+                  </>
+                )}
+                <div className="row ct-editbar">
+                  <button className="btn sm">Save changes</button>
                   <button type="button" className="btn ghost sm" onClick={() => setEdit(null)}>Cancel</button>
                 </div>
               </form>
@@ -243,7 +267,7 @@ export default function ContactsPage() {
               </>
             )}
 
-            {oc.fields?.length > 0 && (
+            {!edit && oc.fields?.length > 0 && (
               <details className="ct-all" open>
                 <summary>All details from the sheet ({oc.fields.length})</summary>
                 <dl className="ct-dl">
@@ -336,6 +360,10 @@ const css = `
 .ct-notes { white-space: pre-wrap; font-size: 13.5px; background: rgba(255,255,255,.6); border-radius: 12px; padding: 10px 12px; border: 1px solid rgba(148,163,184,.22); }
 .ct-all summary { cursor: pointer; font-size: 13px; font-weight: 700; color: var(--c-700); margin: 10px 0 8px; }
 .ct-edit { display: flex; flex-direction: column; gap: 10px; }
+.ct-editgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 12px; }
+.ct-editgrid .wide { grid-column: 1 / -1; }
+.ct-editbar { position: sticky; bottom: -22px; z-index: 2; background: rgba(255,255,255,.97); margin: 0 -22px; padding: 12px 22px; border-top: 1px solid rgba(148,163,184,.25); }
+@media (max-width: 640px) { .ct-editgrid { grid-template-columns: 1fr; } }
 .ct-item { background: rgba(255,255,255,.6); border: 1px solid rgba(148,163,184,.25); border-radius: 14px; padding: 10px 12px; font-size: 13.5px; }
 .ct-item small { display: block; color: #64748b; font-size: 12px; }
 .ct-item.reply { border-left: 3px solid #16a34a; }

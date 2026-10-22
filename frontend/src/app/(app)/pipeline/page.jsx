@@ -3,7 +3,7 @@
 // many contact points (members) per company, notes, and team tasks on each account.
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
-import { LuBuilding2, LuChevronLeft, LuChevronRight, LuClipboardList, LuCopy, LuExternalLink, LuHandshake, LuKeyRound, LuPlus, LuTrash2, LuUserPlus, LuX } from 'react-icons/lu';
+import { LuBuilding2, LuChevronLeft, LuChevronRight, LuCopy, LuExternalLink, LuHandshake, LuKeyRound, LuPlus, LuTrash2, LuUserPlus, LuX } from 'react-icons/lu';
 import { api, date, num, notify } from '@/lib/api';
 
 const STAGES = [['cold', 'Cold lead'], ['hot', 'Hot lead'], ['opportunity', 'Opportunity'], ['account', 'Account'], ['old_client', 'Old client']];
@@ -20,14 +20,12 @@ const copy = (text) => navigator.clipboard?.writeText(text).then(() => notify('C
 const isUrl = (v) => /^https?:\/\/\S+$/i.test(String(v || '').trim());
 
 export default function PipelinePage() {
-  const [view, setView] = useState('companies'); // companies | tasks
   const [stage, setStage] = useState('');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [data, setData] = useState(null);
   const [openId, setOpenId] = useState(null);
   const [convertFirst, setConvertFirst] = useState(false); // open the panel straight on "Convert to account"
-  const [adding, setAdding] = useState(null);
 
   const load = useCallback(() => {
     api('/api/companies', { query: { stage, search, page } }).then(setData).catch((e) => notify(e.message, 'error'));
@@ -50,19 +48,6 @@ export default function PipelinePage() {
       notify(e.message, 'error');
     }
   };
-  const create = async (e) => {
-    e.preventDefault();
-    try {
-      const c = await api('/api/companies', { method: 'POST', body: adding });
-      notify('Company added');
-      setAdding(null);
-      load();
-      setOpenId(c._id);
-    } catch (err) {
-      notify(err.message, 'error');
-    }
-  };
-
   const counts = data?.counts || {};
   const all = Object.values(counts).reduce((a, b) => a + b, 0);
 
@@ -72,27 +57,11 @@ export default function PipelinePage() {
       <div className="page-title">
         <div>
           <h1>Pipeline</h1>
-          <p>Cold lead → Hot lead (they replied) → Opportunity (talks going on) → Account (converted). Team work is assigned once a company is an account.</p>
-        </div>
-        <div className="row">
-          <button className={`btn ${view === 'tasks' ? '' : 'ghost'}`} onClick={() => setView(view === 'tasks' ? 'companies' : 'tasks')}><LuClipboardList /> {view === 'tasks' ? 'Back to companies' : 'Team tasks'}</button>
-          <button className="btn" onClick={() => setAdding({ name: '', stage: stage || 'cold' })}><LuPlus /> Add company</button>
+          <p>Cold lead → Hot lead (they replied) → Opportunity (talks going on) → Account (converted). An account gets its team, their tasks and messages.</p>
         </div>
       </div>
 
-      {adding && (
-        <form className="card pl-form" onSubmit={create}>
-          <label className="field">Company / brand *<input required value={adding.name} onChange={(e) => setAdding({ ...adding, name: e.target.value })} /></label>
-          <label className="field">Stage
-            <select value={adding.stage} onChange={(e) => setAdding({ ...adding, stage: e.target.value })}>{STAGES.map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>
-          </label>
-          <div className="row"><button className="btn">Save</button><button type="button" className="btn ghost" onClick={() => setAdding(null)}>Cancel</button></div>
-        </form>
-      )}
-
-      {view === 'tasks' ? (
-        <TeamTasks onOpen={setOpenId} />
-      ) : (
+      {(
         <>
           <div className="pl-stages">
             <button className={stage === '' ? 'on' : ''} onClick={() => { setStage(''); setPage(1); }}><span>All</span><b>{num(all)}</b></button>
@@ -331,31 +300,48 @@ function CompanyPanel({ id, onClose, convertFirst }) {
 
         {['account', 'old_client'].includes(c.stage) ? (
           <>
-        <h3>Team tasks ({c.tasks.filter((t) => !t.done).length} open) <Link href="/team" className="pl-teamlink">Manage team →</Link></h3>
-        {c.tasks.length === 0 && <p className="muted small">No tasks yet. Assign work to your team below.</p>}
-        {c.tasks.map((t) => (
-          <div key={t._id} className={`pl-task ${t.done ? 'done' : ''}`}>
-            <input type="checkbox" checked={t.done} onChange={(e) => call(`/tasks/${t._id}`, 'PUT', { done: e.target.checked })} />
-            <div>
-              <b>{t.member}</b>
-              <p>{t.task}</p>
-              <small>{date(t.updatedAt)}</small>
+            <h3>Team on this account <Link href="/team" className="pl-teamlink">Manage team →</Link></h3>
+            <div className="pl-chips">
+              {(c.team || []).length === 0 && <span className="muted small">Nobody yet — add the people who will work on {c.name}.</span>}
+              {(c.team || []).map((m) => (
+                <span key={m} className="pl-chip">{m}<button title={`Remove ${m}`} onClick={() => call('/team', 'PUT', { team: c.team.filter((x) => x !== m) })}><LuX /></button></span>
+              ))}
+              {d.team.filter((m) => !(c.team || []).includes(m)).length > 0 && (
+                <select className="pl-addmember" value="" onChange={(e) => e.target.value && call('/team', 'PUT', { team: [...(c.team || []), e.target.value] }, `${e.target.value} added`)}>
+                  <option value="">+ Add team member</option>
+                  {d.team.filter((m) => !(c.team || []).includes(m)).map((m) => <option key={m}>{m}</option>)}
+                </select>
+              )}
+              {d.team.length === 0 && <Link href="/team" className="btn soft sm">Add your team first</Link>}
             </div>
-            <button className="btn ghost sm" title="Delete task" onClick={() => call(`/tasks/${t._id}`, 'DELETE')}><LuTrash2 /></button>
-          </div>
-        ))}
-        <form className="row pl-taskform" onSubmit={async (e) => { e.preventDefault(); if (await call('/tasks', 'POST', task, 'Task assigned')) setTask({ member: task.member, task: '' }); }}>
-          <select required value={task.member} onChange={(e) => setTask({ ...task, member: e.target.value })}>
-            <option value="">{d.team.length ? 'Assign to…' : 'Add your team first'}</option>
-            {d.team.map((m) => <option key={m}>{m}</option>)}
-          </select>
-          <input required placeholder="What needs to be done?" value={task.task} onChange={(e) => setTask({ ...task, task: e.target.value })} />
-          <button className="btn sm"><LuPlus /> Assign</button>
-        </form>
 
+            <h3>Tasks ({c.tasks.filter((t) => !t.done).length} open)</h3>
+            {c.tasks.length === 0 && <p className="muted small">No tasks yet. Write what each person has to do.</p>}
+            {c.tasks.map((t) => (
+              <div key={t._id} className={`pl-task ${t.done ? 'done' : ''}`}>
+                <input type="checkbox" checked={t.done} onChange={(e) => call(`/tasks/${t._id}`, 'PUT', { done: e.target.checked })} />
+                <div>
+                  <b>{t.member}</b>
+                  <p>{t.task}</p>
+                  <small>{date(t.updatedAt)}</small>
+                </div>
+                <button className="btn ghost sm" title="Delete task" onClick={() => call(`/tasks/${t._id}`, 'DELETE')}><LuTrash2 /></button>
+              </div>
+            ))}
+            <form className="row pl-taskform" onSubmit={async (e) => { e.preventDefault(); if (await call('/tasks', 'POST', task, 'Task assigned')) setTask({ member: task.member, task: '' }); }}>
+              <select required value={task.member} onChange={(e) => setTask({ ...task, member: e.target.value })}>
+                <option value="">{(c.team || []).length ? 'Assign to…' : 'Add a team member first'}</option>
+                {(c.team || []).map((m) => <option key={m}>{m}</option>)}
+              </select>
+              <input required placeholder="What needs to be done?" value={task.task} onChange={(e) => setTask({ ...task, task: e.target.value })} />
+              <button className="btn sm" disabled={!(c.team || []).length}><LuPlus /> Assign</button>
+            </form>
+
+            <h3>Messages</h3>
+            <Messages list={c.messages || []} onSend={(text) => call('/messages', 'POST', { text })} hint="Visible to the team on this account and to the client." />
           </>
         ) : (
-          <p className="pl-hint">Team tasks open once this company is converted to an account.</p>
+          <p className="pl-hint">Team, tasks and messages open once this company is converted to an account.</p>
         )}
 
         {c.fields?.length > 0 && (
@@ -373,51 +359,50 @@ function CompanyPanel({ id, onClose, convertFirst }) {
   );
 }
 
-/* ---------- every open task, by team member ---------- */
-function TeamTasks({ onOpen }) {
-  const [member, setMember] = useState('');
-  const [showDone, setShowDone] = useState(false);
-  const [data, setData] = useState(null);
-  const load = useCallback(() => {
-    api('/api/companies/tasks', { query: { member, done: showDone ? 'all' : '' } }).then(setData).catch((e) => notify(e.message, 'error'));
-  }, [member, showDone]);
-  useEffect(() => {
-    load();
-  }, [load]);
-  const toggle = async (t) => {
-    await api(`/api/companies/${t.companyId}/tasks/${t._id}`, { method: 'PUT', body: { done: !t.done } }).catch((e) => notify(e.message, 'error'));
-    load();
+/* ---------- conversation on an account (admin, team, client) ---------- */
+function Messages({ list, onSend, hint }) {
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const send = async (e) => {
+    e.preventDefault();
+    if (!text.trim()) return;
+    setBusy(true);
+    if (await onSend(text.trim())) setText('');
+    setBusy(false);
   };
-  const groups = {};
-  for (const t of data?.items || []) (groups[t.member] ||= []).push(t);
   return (
-    <div className="card">
-      <div className="row pl-filters">
-        <div className="tabs">
-          <button className={member === '' ? 'on' : ''} onClick={() => setMember('')}>Everyone</button>
-          {(data?.team || []).map((m) => <button key={m} className={member === m ? 'on' : ''} onClick={() => setMember(m)}>{m}</button>)}
-        </div>
-        <label className="pl-check"><input type="checkbox" checked={showDone} onChange={(e) => setShowDone(e.target.checked)} /> Show done</label>
-      </div>
-      {!data ? <p className="muted">Loading…</p> : !data.items.length ? <p className="empty">No open tasks.</p> : Object.entries(groups).map(([m, list]) => (
-        <div key={m} className="pl-group">
-          <h3>{m} <span className="muted">({list.length})</span></h3>
-          {list.map((t) => (
-            <div key={t._id} className={`pl-task ${t.done ? 'done' : ''}`}>
-              <input type="checkbox" checked={t.done} onChange={() => toggle(t)} />
-              <div>
-                <button className="pl-link" onClick={() => onOpen(t.companyId)}>{t.company}</button> <span className={`stage ${t.stage}`}>{STAGE[t.stage]}</span>
-                <p>{t.task}</p>
-              </div>
-            </div>
-          ))}
+    <div className="pl-msgs">
+      {list.length === 0 && <p className="muted small">No messages yet. {hint}</p>}
+      {list.map((m) => (
+        <div key={m._id} className={`pl-msg ${m.role}`}>
+          <div className="pl-msghead"><b>{m.author}</b><span>{m.role === 'client' ? 'Client' : m.role === 'team' ? 'Team' : 'Admin'} · {new Date(m.createdAt).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}</span></div>
+          <p>{m.text}</p>
         </div>
       ))}
+      <form className="pl-msgform" onSubmit={send}>
+        <textarea rows={2} placeholder="Write a message…" value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) send(e); }} />
+        <button className="btn sm" disabled={busy || !text.trim()}>Send</button>
+      </form>
     </div>
   );
 }
 
 const css = `
+.pl-chips { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.pl-chip { display: inline-flex; align-items: center; gap: 4px; background: var(--c-100); color: var(--c-700); font-weight: 600; font-size: 13px; padding: 5px 6px 5px 12px; border-radius: 99px; }
+.pl-chip button { border: 0; background: none; color: inherit; cursor: pointer; display: grid; place-items: center; padding: 2px; border-radius: 50%; }
+.pl-chip button:hover { background: rgba(255,255,255,.7); }
+.pl-addmember { width: auto; padding: 5px 10px; font-size: 13px; border-radius: 99px; }
+.pl-msgs { display: flex; flex-direction: column; gap: 8px; }
+.pl-msg { background: #fff; border: 1px solid rgba(148,163,184,.22); border-radius: 14px; padding: 10px 12px; font-size: 13.5px; }
+.pl-msg.client { border-left: 3px solid #16a34a; }
+.pl-msg.team { border-left: 3px solid #f59e0b; }
+.pl-msg.admin { border-left: 3px solid var(--c); }
+.pl-msghead { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
+.pl-msghead span { font-size: 11.5px; color: #94a3b8; }
+.pl-msg p { white-space: pre-wrap; }
+.pl-msgform { display: flex; gap: 8px; align-items: flex-end; }
+.pl-msgform textarea { flex: 1; }
 .pl-form { display: grid; grid-template-columns: 2fr 1fr; gap: 12px; align-items: end; }
 .pl-form .row { grid-column: 1 / -1; }
 .pl-stages { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; }

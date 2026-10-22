@@ -233,7 +233,11 @@ router.post(
     const member = str(req.body?.member, 60);
     const task = str(req.body?.task, 2000);
     if (!member || !task) throw fail(400, 'Choose a team member and write the task');
-    const c = await Company.findOneAndUpdate({ _id: checkId(req.params.id), stage: { $in: ['account', 'old_client'] } }, { $push: { tasks: { member, task, done: false, updatedAt: new Date() } } }, { new: true });
+    const c = await Company.findOneAndUpdate(
+      { _id: checkId(req.params.id), stage: { $in: ['account', 'old_client'] } },
+      { $push: { tasks: { member, task, done: false, updatedAt: new Date() } }, $addToSet: { team: member } },
+      { new: true }
+    );
     if (!c) throw fail(400, 'Team tasks are for accounts. Convert this company to an account first.');
     res.status(201).json(c);
   })
@@ -258,6 +262,33 @@ router.delete(
     const c = await Company.findByIdAndUpdate(checkId(req.params.id), { $pull: { tasks: { _id: checkId(req.params.taskId) } } }, { new: true });
     if (!c) throw fail(404, 'Company not found');
     res.json(c);
+  })
+);
+
+/* ---------- account team + messages ---------- */
+router.put(
+  '/:id/team',
+  ah(async (req, res) => {
+    const all = await getTeam();
+    const team = [...new Set((Array.isArray(req.body?.team) ? req.body.team : []).map((m) => str(m, 80)))].filter((m) => all.includes(m));
+    const c = await Company.findOneAndUpdate({ _id: checkId(req.params.id), stage: { $in: ['account', 'old_client'] } }, { $set: { team } }, { new: true });
+    if (!c) throw fail(400, 'Only accounts have a team');
+    res.json(c);
+  })
+);
+
+router.post(
+  '/:id/messages',
+  ah(async (req, res) => {
+    const text = str(req.body?.text, 5000);
+    if (!text) throw fail(400, 'Write a message');
+    const c = await Company.findOneAndUpdate(
+      { _id: checkId(req.params.id), stage: { $in: ['account', 'old_client'] } },
+      { $push: { messages: { author: req.user, role: 'admin', text, createdAt: new Date() } } },
+      { new: true }
+    );
+    if (!c) throw fail(400, 'Messages are for accounts');
+    res.status(201).json(c.messages.at(-1));
   })
 );
 

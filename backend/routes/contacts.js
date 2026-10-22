@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import mongoose from 'mongoose';
 import { Campaign, Company, Contact, EmailLog, Enrollment, Reply, STAGES, Suppression, remember, statusRank, upsertCompany } from '../models.js';
-import { cleanFields } from '../sheets.js';
+import { cleanFields, mapColumns } from '../sheets.js';
 import { config } from '../config.js';
 import { fill, parseCc } from '../mail.js';
 import { FOLLOW_UPS } from '../templates.js';
@@ -311,13 +311,57 @@ router.post(
   })
 );
 
+// Edit a person. Saves the main details AND the "all details from the sheet" list, and keeps both in step:
+// change Designation in the main details -> the sheet's "Designation" column changes too, and the other way round.
 router.put(
   '/:id',
   ah(async (req, res) => {
-    const set = Object.fromEntries(Object.entries(fields(req.body)).filter(([k]) => req.body?.[k] !== undefined || (k === 'customSubject' && req.body?.subject !== undefined) || (k === 'customBody' && req.body?.body !== undefined)));
-    const c = await Contact.findByIdAndUpdate(checkId(req.params.id), { $set: set }, { new: true });
+    const c = await Contact.findById(checkId(req.params.id));
     if (!c) throw fail(404, 'Contact not found');
-    if (set.company) await linkCompanies([c]);
+    const body = req.body || {};
+    const clean = fields(body);
+    const changed = {}; // core detail -> new value
+    for (const k of INFO) if (body[k] !== undefined && clean[k] !== (c[k] || '')) changed[k] = clean[k];
+    if (body.email !== undefined) {
+      const raw = str(body.email, 254);
+      const e = raw ? validEmail(raw) : '';
+      if (e === null) throw fail(400, 'That email address does not look right');
+      if (e !== (c.email || '')) changed.email = e;
+    }
+
+    // sheet details: the edited list if sent, else the saved one
+    const before = (c.fields || []).map((f) => ({ k: f.k, v: f.v }));
+    let list = Array.isArray(body.fields) ? cleanFields(body.fields) : before.map((f) => ({ ...f }));
+    const map = mapColumns(list.map((f) => f.k));
+    for (const [k, i] of Object.entries(map)) {
+      if (![...INFO, 'email'].includes(k) || !list[i]) continue;
+      if (k in changed) list[i].v = changed[k]; // main detail edited -> sheet follows
+      else {
+        const old = before.find((f) => f.k === list[i].k)?.v || '';
+        if (list[i].v !== old) changed[k] = k === 'email' ? validEmail(list[i].v) || c.email || '' : list[i].v; // sheet edited -> main detail follows
+      }
+    }
+    list = list.filter((f) => f.v);
+
+    if (changed.email) {
+      const taken = await Contact.exists({ email: changed.email, _id: { $ne: c._id } });
+      if (taken) throw fail(409, `${changed.email} is already saved on another contact`);
+    }
+    for (const [k, v] of Object.entries(changed)) c[k] = k === 'email' && !v ? undefined : v;
+    c.fields = list;
+    if (body.subject !== undefined) c.customSubject = clean.customSubject;
+    if (body.body !== undefined) c.customBody = clean.customBody;
+
+    if ('company' in changed) {
+      const co = changed.company ? await upsertCompany(changed.company, { website: c.website, industry: c.industry, location: c.location, source: c.batch || '' }) : null;
+      c.companyId = co?._id || undefined;
+    }
+    try {
+      await c.save();
+    } catch (e) {
+      if (e?.code === 11000) throw fail(409, 'That email is already saved on another contact');
+      throw e;
+    }
     res.json(c);
   })
 );

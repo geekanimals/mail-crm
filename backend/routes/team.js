@@ -52,7 +52,10 @@ router.put(
     if (req.body?.password) u.passwordHash = hashPassword(strongEnough(req.body.password));
     await u.save();
     // renamed: their tasks follow them
-    if (old !== u.name) await Company.updateMany({ 'tasks.member': old }, { $set: { 'tasks.$[t].member': u.name } }, { arrayFilters: [{ 't.member': old }] });
+    if (old !== u.name) {
+      await Company.updateMany({ 'tasks.member': old }, { $set: { 'tasks.$[t].member': u.name } }, { arrayFilters: [{ 't.member': old }] });
+      await Company.updateMany({ team: old }, { $set: { 'team.$': u.name } });
+    }
     res.json(u);
   })
 );
