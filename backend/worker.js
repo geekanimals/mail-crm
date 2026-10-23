@@ -365,6 +365,11 @@ export function checkReplies() {
 async function readInbox() {
   const { host, port, secure, user, pass } = config.imap;
   const client = new ImapFlow({ host, port, secure, auth: { user, pass }, logger: false });
+  // a dropped / timed-out mail connection must never crash the server - just log it, the next check retries
+  client.on('error', (e) => {
+    status.imapError = e?.message || String(e);
+    console.warn('[imap] connection error:', e?.code || e?.message);
+  });
   let found = 0;
   try {
     await client.connect();

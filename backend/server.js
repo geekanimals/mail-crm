@@ -1,5 +1,8 @@
 // Geek CRM backend - start with: npm run dev   (port from .env, default 5001)
 import express from 'express';
+
+// one failed background job (mail server timeout etc.) is logged, never takes the whole API down
+process.on('unhandledRejection', (e) => console.warn('[warn] unhandled:', e?.code || e?.message || e));
 import cors from 'cors';
 import helmet from 'helmet';
 import mongoose from 'mongoose';
