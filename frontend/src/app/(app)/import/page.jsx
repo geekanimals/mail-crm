@@ -30,6 +30,8 @@ const BASIC = [
   ['referredBy', 'Referred by', [/referr?ed.?by|^referral/i], /$^/],
   ['lastSent', 'Last email sent on', [/sent.?(on|date)/i, /^last/i], /$^/],
 ];
+// big files go in small pieces, so each request finishes well inside the server's 60-second limit
+const CHUNK = 25;
 const STAGES = [['cold', 'Cold lead'], ['hot', 'Hot lead'], ['opportunity', 'Opportunity'], ['account', 'Account'], ['old_client', 'Old client']];
 
 /* ---------- CSV ---------- */
@@ -185,6 +187,7 @@ export default function ImportPage() {
   const [batch, setBatch] = useState('');
   const [campaigns, setCampaigns] = useState([]);
   const [campaignId, setCampaignId] = useState('');
+  const [prog, setProg] = useState(''); // "75 / 465" while a big file is being saved
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState(null);
   const [defaults, setDefaults] = useState({ followUps: [], skipWeekends: true });
@@ -261,8 +264,9 @@ export default function ImportPage() {
     const total = { inserted: 0, updated: 0, alreadyInCrm: 0, invalid: 0, addedToCampaign: 0, noFirstEmail: 0 };
     let cid = campaignId;
     try {
-      for (let i = 0; i < all.length; i += 500) {
-        const r = await api('/api/contacts/import', { method: 'POST', body: { rows: all.slice(i, i + 500), batch, campaignId: cid || undefined, startNow, gapDays: gap, cc, stage: pstage } });
+      for (let i = 0; i < all.length; i += CHUNK) {
+        setProg(`${Math.min(i + CHUNK, all.length)} / ${all.length}`);
+        const r = await api('/api/contacts/import', { method: 'POST', body: { rows: all.slice(i, i + CHUNK), batch, campaignId: cid || undefined, startNow, gapDays: gap, cc, stage: pstage } });
         for (const k in total) total[k] += r[k] || 0;
         if (r.campaignId) cid = r.campaignId; // later chunks go into the same campaign
       }
@@ -286,8 +290,9 @@ export default function ImportPage() {
     const total = { started: 0, fresh: 0, finished: 0, stopped: 0, skipped: 0, invalid: 0, alreadyInCrm: 0, savedNoEmail: 0, errors: [] };
     let cid;
     try {
-      for (let i = 0; i < all.length; i += 500) {
-        const r = await api('/api/contacts/import-continue', { method: 'POST', body: { rows: all.slice(i, i + 500), batch, gapDays: gap, cc, campaignId: cid, stage: pstage } });
+      for (let i = 0; i < all.length; i += CHUNK) {
+        setProg(`${Math.min(i + CHUNK, all.length)} / ${all.length}`);
+        const r = await api('/api/contacts/import-continue', { method: 'POST', body: { rows: all.slice(i, i + CHUNK), batch, gapDays: gap, cc, campaignId: cid, stage: pstage } });
         for (const k of ['started', 'fresh', 'finished', 'stopped', 'skipped', 'invalid', 'alreadyInCrm', 'savedNoEmail']) total[k] += r[k] || 0;
         total.errors.push(...(r.errors || []));
         if (r.campaignId) cid = r.campaignId;
@@ -473,7 +478,7 @@ export default function ImportPage() {
           )}
 
           {map.email !== undefined && (
-            <div className="im-count">All {num(preview.length)} people from the file{preview.filter((p) => !p.email).length ? ` · ${preview.filter((p) => !p.email).length} without email (skipped)` : ''}</div>
+            <div className="im-count">All {num(preview.length)} people from the file{preview.filter((p) => !p.email).length ? ` · ${preview.filter((p) => !p.email).length} without email (saved for LinkedIn / phone, never emailed)` : ''}</div>
           )}
           {map.email !== undefined && (
             <div className="table-wrap im-preview">
@@ -561,14 +566,14 @@ export default function ImportPage() {
           {mode === 'continue' ? (
           <div className="row">
             <button className="btn" disabled={busy || map.email === undefined || map.status === undefined} onClick={runContinue}>
-              <LuPlay /> {busy ? 'Working…' : 'Import & continue follow-ups'}
+              <LuPlay /> {busy ? `Working… ${prog}` : 'Import & continue follow-ups'}
             </button>
             <button className="btn ghost" onClick={() => setFile(null)}>Cancel</button>
           </div>
           ) : (
           <div className="row">
             <button className="btn" disabled={busy || map.email === undefined} onClick={() => runImport(true)}>
-              <LuPlay /> {busy ? 'Working…' : campaignId ? 'Import & add to campaign' : 'Import & start sending'}
+              <LuPlay /> {busy ? `Working… ${prog}` : campaignId ? 'Import & add to campaign' : 'Import & start sending'}
             </button>
             <button className="btn ghost" disabled={busy || map.email === undefined} onClick={() => runImport(false)}><LuUpload /> Import only</button>
             <button className="btn ghost" onClick={() => setFile(null)}>Cancel</button>
