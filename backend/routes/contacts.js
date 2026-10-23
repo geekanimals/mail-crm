@@ -10,7 +10,7 @@ import { ah, checkId, fail, str, validEmail } from '../utils.js';
 
 const router = Router();
 const STATUSES = ['new', 'contacted', 'replied', 'unsubscribed', 'bounced'];
-const INFO = ['name', 'company', 'title', 'phone', 'linkedin', 'website', 'industry', 'location', 'signal', 'notes', 'leadDate'];
+const INFO = ['name', 'company', 'title', 'phone', 'linkedin', 'website', 'industry', 'location', 'signal', 'notes', 'leadDate', 'referredBy'];
 const fields = (b = {}) => {
   const blank = (v) => (/^(none|n\/?a|-|null|nil)$/i.test(v) ? '' : v); // "none" in a sheet = empty
   const out = Object.fromEntries(INFO.map((k) => [k, blank(str(b[k], k === 'notes' ? 5000 : 300))]));
@@ -27,11 +27,18 @@ async function linkCompanies(rows, stage) {
   for (const r of rows) if (r.company) (byName.get(r.company) || byName.set(r.company, []).get(r.company)).push(r);
   for (const [name, list] of byName) {
     const first = list[0];
-    const c = await upsertCompany(name, { website: first.website, industry: first.industry, location: first.location, source: first.batch || '', stage: stage || 'cold' });
-    if (c) await Contact.updateMany({ email: { $in: list.map((r) => r.email).filter(Boolean) } }, { $set: { companyId: c._id } });
+    // the company takes the furthest stage of its people (upsertCompany never moves a stage back)
+    const rank = (s) => (STAGES.includes(s) ? STAGES.indexOf(s) : -1);
+    const best = list.map((r) => r.pipeline).filter((s) => STAGES.includes(s)).sort((a, b) => rank(b) - rank(a))[0];
+    const c = await upsertCompany(name, { website: first.website, industry: first.industry, location: first.location, source: first.batch || '', stage: best || stage || 'cold' });
+    if (!c) continue;
+    const ids = list.map((r) => r._id).filter(Boolean);
+    const emails = list.map((r) => r.email).filter(Boolean);
+    await Contact.updateMany({ $or: [{ _id: { $in: ids } }, { email: { $in: emails } }] }, { $set: { companyId: c._id } });
   }
   return byName.size;
 }
+const rowStage = (r, fallback) => (STAGES.includes(String(r?.pipeline || '').trim().toLowerCase()) ? String(r.pipeline).trim().toLowerCase() : fallback);
 
 // list + search + filter
 router.get(
@@ -46,7 +53,7 @@ router.get(
     if (STATUSES.includes(req.query.status)) filter.status = req.query.status;
     if (str(req.query.batch)) filter.batch = str(req.query.batch);
     const [items, total, counts, batches] = await Promise.all([
-      Contact.find(filter).sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit).select('-messages -customBody').populate('companyId', 'name stage owner'),
+      Contact.find(filter).sort({ createdAt: -1, _id: -1 }).skip((page - 1) * limit).limit(limit).select('-messages -customBody').populate('companyId', 'name stage owner'),
       Contact.countDocuments(filter),
       Contact.aggregate([{ $group: { _id: '$status', n: { $sum: 1 } } }]),
       Contact.distinct('batch'),
@@ -128,26 +135,15 @@ router.post(
       seen.add(email);
       const s = str(r.status, 40).toLowerCase();
       const status = /unsub/.test(s) ? 'unsubscribed' : /repl/.test(s) ? 'replied' : /bounce/.test(s) ? 'bounced' : /sent|contacted|emailed/.test(s) ? 'contacted' : 'new';
-      valid.push({ ...fields(r), email, status, batch, source: `File: ${batch}`, messages: cleanMessages(r.messages), fields: cleanFields(r.fields) });
+      valid.push({ ...fields(r), email, status, batch, source: `File: ${batch}`, messages: cleanMessages(r.messages), fields: cleanFields(r.fields), pipeline: rowStage(r) });
     }
 
-    // People already in the CRM are never added twice (so nobody gets the first email again).
-    // But you can re-upload to change their upcoming messages - unless they replied / unsubscribed / bounced.
-    const existingDocs = await Contact.find({ email: { $in: valid.map((v) => v.email) } }).select('email status').lean();
+    // People already in the CRM are skipped completely: only new, unique people are added
+    // (nobody is duplicated, changed or emailed again by a re-upload).
+    const existingDocs = await Contact.find({ email: { $in: valid.map((v) => v.email) } }).select('email').lean();
     const existing = new Map(existingDocs.map((c) => [c.email, c]));
-    let updated = 0;
+    const updated = 0;
     const updatedIds = [];
-    for (const v of valid.filter((x) => existing.has(x.email))) {
-      const c = existing.get(v.email);
-      // details (name, company, title ... and every sheet column) are always refreshed
-      const set = { ...given(v), ...(v.fields.length ? { fields: v.fields } : {}) };
-      const canChangeEmails = v.messages.length && !['replied', 'unsubscribed', 'bounced'].includes(c.status);
-      if (canChangeEmails) set.messages = v.messages;
-      if (!Object.keys(set).length) continue;
-      await Contact.updateOne({ _id: c._id }, { $set: set });
-      updated++;
-      if (canChangeEmails && c.status === 'new') updatedIds.push(c._id);
-    }
 
     const fresh = valid.filter((v) => !existing.has(v.email));
     const memory = new Map((await Suppression.find({ email: { $in: fresh.map((v) => v.email) } }).lean()).map((s) => [s.email, s.reason]));
@@ -164,7 +160,7 @@ router.post(
     }
 
     // every person is linked to their company (pipeline stage chosen on the upload page)
-    const companies = await linkCompanies(valid, STAGES.includes(req.body.stage) ? req.body.stage : 'cold');
+    const companies = await linkCompanies(inserted.length ? inserted.map((c) => ({ ...c.toObject(), pipeline: fresh.find((v) => v.email === c.email)?.pipeline })) : [], STAGES.includes(req.body.stage) ? req.body.stage : 'cold');
 
     // Start sending: into a chosen campaign, or a new one named after the file
     let added = 0;
@@ -232,51 +228,75 @@ router.post(
     const batch = str(req.body.batch, 200) || `Continue ${new Date().toISOString().slice(0, 10)}`;
     const gapNum = parseInt(req.body.gapDays, 10);
     const gap = gapNum >= 1 && gapNum <= 30 ? gapNum : config.intervalDays;
-    const out = { started: 0, fresh: 0, finished: 0, stopped: 0, skipped: 0, invalid: 0, errors: [] };
+    const out = { started: 0, fresh: 0, finished: 0, stopped: 0, skipped: 0, invalid: 0, alreadyInCrm: 0, savedNoEmail: 0, errors: [] };
     const seen = new Set();
     // later chunks of the same file go into the same campaign
     let campaign = mongoose.isValidObjectId(req.body.campaignId) ? await Campaign.findById(req.body.campaignId) : null;
     const now = new Date();
+    const fallbackStage = STAGES.includes(req.body.stage) ? req.body.stage : 'cold';
+    const escape = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
     for (const r of rows) {
       const email = validEmail(r?.email);
-      if (!email || seen.has(email)) { if (!email) out.invalid++; continue; }
+      const info = { ...given(r), batch, source: `File: ${batch}` };
+      const sheetCols = cleanFields(r.fields);
+      if (sheetCols.length) info.fields = sheetCols;
+      const pipeline = rowStage(r, fallbackStage);
+
+      // a referral with no company of its own joins the company of the person who referred them
+      if (!info.company && info.referredBy) {
+        const who = info.referredBy.replace(/\s*\(.*\)\s*$/, '').trim();
+        const ref = who && (await Contact.findOne({ name: new RegExp(`^${escape(who)}$`, 'i'), company: { $ne: '' } }).select('company').lean());
+        if (ref) info.company = ref.company;
+      }
+
+      // no email: saved for LinkedIn / phone (never emailed); the same name at the same company is not added twice
+      if (!email) {
+        if (!info.name) { out.invalid++; continue; }
+        const key = `${info.name.toLowerCase()}|${(info.company || '').toLowerCase()}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const twin = await Contact.findOne({ name: new RegExp(`^${escape(info.name)}$`, 'i'), company: info.company || '' }).select('_id').lean();
+        if (twin) { out.alreadyInCrm++; continue; }
+        const said = parseStage(r.status);
+        const c = await new Contact({ ...info, ...(said.status ? { status: said.status } : {}) }).save(); // replied / not interested stay visible
+        if (c.company) await linkCompanies([{ ...c.toObject(), pipeline }], pipeline);
+        out.savedNoEmail++;
+        continue;
+      }
+      if (seen.has(email)) continue;
       seen.add(email);
+
+      // already in the CRM: skipped completely - only new, unique people are added
+      if (await Contact.exists({ email })) { out.alreadyInCrm++; continue; }
+
       const stage = parseStage(r.status);
       if (stage.error) { out.errors.push(`${email}: ${stage.error}`); out.skipped++; continue; }
       const subject = str(r.subject, 500);
       const body = str(r.body, 20000);
-
-      const existing = await Contact.findOne({ email });
       const memory = await Suppression.findOne({ email }).lean();
-      if (['unsubscribed', 'bounced'].includes(memory?.reason) || ['replied', 'unsubscribed', 'bounced'].includes(existing?.status)) { out.skipped++; continue; }
-      if (existing && (await Enrollment.exists({ contact: existing._id, status: 'active' }))) { out.errors.push(`${email}: already running`); out.skipped++; continue; }
+      const blocked = ['unsubscribed', 'bounced'].includes(memory?.reason);
 
-      const info = { ...given(r), batch, source: `File: ${batch}` };
-      const sheetCols = cleanFields(r.fields);
-      if (sheetCols.length) info.fields = sheetCols;
-      const pipeline = STAGES.includes(req.body.stage) ? req.body.stage : 'cold';
-
-      // replied / unsubscribed / bounced -> just remember, never email
-      if (stage.status) {
-        const c = existing ? Object.assign(existing, info, { status: stage.status }) : new Contact({ ...info, email, status: stage.status });
-        await c.save();
-        await remember(email, stage.status);
-        if (c.company) await linkCompanies([c], stage.status === 'replied' ? 'hot' : pipeline);
+      // replied / unsubscribed / bounced (or blocked before) -> just remember, never email
+      if (stage.status || blocked) {
+        const status = blocked && !stage.status ? memory.reason : stage.status;
+        const c = await new Contact({ ...info, email, status, ...(subject || body ? { messages: [{ subject, body, day: 0 }] } : {}) }).save();
+        await remember(email, status);
+        if (c.company) await linkCompanies([{ ...c.toObject(), pipeline: status === 'replied' && pipeline === 'cold' ? 'hot' : pipeline }], pipeline);
         out.stopped++;
         continue;
       }
+      const finished = stage.sent >= 1 + FOLLOW_UPS.length;
       if (stage.sent === 0 && !body) { out.errors.push(`${email}: status is new but no first email (subject/body)`); out.skipped++; continue; }
-      if (stage.sent > 0 && !subject) { out.errors.push(`${email}: subject of the first email is needed for "Re: subject"`); out.skipped++; continue; }
+      if (stage.sent > 0 && !finished && !subject) { out.errors.push(`${email}: subject of the first email is needed for "Re: subject"`); out.skipped++; continue; }
 
-      const contact = existing ? Object.assign(existing, info) : new Contact({ ...info, email });
-      contact.messages = [{ subject, body, day: 0 }];
+      const contact = new Contact({ ...info, email, ...(subject || body ? { messages: [{ subject, body, day: 0 }] } : {}) });
       if (stage.sent > 0) contact.status = 'contacted';
       await contact.save();
       if (stage.sent > 0) await remember(email, 'contacted');
-      if (contact.company) await linkCompanies([contact], pipeline);
+      if (contact.company) await linkCompanies([{ ...contact.toObject(), pipeline }], pipeline);
 
-      if (stage.sent >= 1 + FOLLOW_UPS.length) { out.finished++; continue; } // everything already sent
+      if (finished) { out.finished++; continue; } // everything already sent - saved only
 
       campaign ||= await Campaign.create({
         name: batch,

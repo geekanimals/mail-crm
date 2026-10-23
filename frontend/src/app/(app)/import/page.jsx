@@ -26,6 +26,8 @@ const BASIC = [
   ['notes', 'Notes / remarks', [/^remarks?$/i, /^notes?$/i], /$^/],
   ['leadDate', 'Lead date', [/lead date/i, /date_added|date added/i], /$^/],
   ['status', 'Status', [/^status$/i, /status|stage/i], /$^/],
+  ['pipeline', 'Pipeline stage (per person)', [/^pipeline/i], /$^/],
+  ['referredBy', 'Referred by', [/referr?ed.?by|^referral/i], /$^/],
   ['lastSent', 'Last email sent on', [/sent.?(on|date)/i, /^last/i], /$^/],
 ];
 const STAGES = [['cold', 'Cold lead'], ['hot', 'Hot lead'], ['opportunity', 'Opportunity'], ['account', 'Account'], ['old_client', 'Old client']];
@@ -281,12 +283,12 @@ export default function ImportPage() {
       body: msgCols[0] ? cell(file.rows[i], msgCols[0].body) : '',
       messages: undefined,
     }));
-    const total = { started: 0, fresh: 0, finished: 0, stopped: 0, skipped: 0, invalid: 0, errors: [] };
+    const total = { started: 0, fresh: 0, finished: 0, stopped: 0, skipped: 0, invalid: 0, alreadyInCrm: 0, savedNoEmail: 0, errors: [] };
     let cid;
     try {
       for (let i = 0; i < all.length; i += 500) {
         const r = await api('/api/contacts/import-continue', { method: 'POST', body: { rows: all.slice(i, i + 500), batch, gapDays: gap, cc, campaignId: cid, stage: pstage } });
-        for (const k of ['started', 'fresh', 'finished', 'stopped', 'skipped', 'invalid']) total[k] += r[k] || 0;
+        for (const k of ['started', 'fresh', 'finished', 'stopped', 'skipped', 'invalid', 'alreadyInCrm', 'savedNoEmail']) total[k] += r[k] || 0;
         total.errors.push(...(r.errors || []));
         if (r.campaignId) cid = r.campaignId;
       }
@@ -582,6 +584,8 @@ export default function ImportPage() {
             <div><b>{num(result.started)}</b><span>Continue from next follow-up</span></div>
             <div><b>{num(result.fresh)}</b><span>Get the first email</span></div>
             <div><b>{num(result.stopped + result.finished)}</b><span>Replied / unsub / all done — no email</span></div>
+            <div><b>{num(result.savedNoEmail)}</b><span>Saved without email (LinkedIn / phone)</span></div>
+            <div><b>{num(result.alreadyInCrm)}</b><span>Already in CRM — skipped</span></div>
             <div><b>{num(result.skipped + result.invalid)}</b><span>Skipped</span></div>
           </div>
           {result.errors.length > 0 && (
@@ -598,7 +602,7 @@ export default function ImportPage() {
         <div className="card">
           <div className="im-result">
             <div><b>{num(result.inserted)}</b><span>New contacts</span></div>
-            <div><b>{num(result.updated)}</b><span>Messages updated</span></div>
+            <div><b>{num(result.alreadyInCrm)}</b><span>Already in CRM — skipped</span></div>
             <div><b>{num(result.invalid)}</b><span>Invalid / no email</span></div>
             <div><b>{num(result.addedToCampaign)}</b><span>Started sending</span></div>
           </div>

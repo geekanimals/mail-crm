@@ -54,7 +54,7 @@ router.get(
     const q = escape(str(req.query.search, 100));
     if (q) filter.$or = ['name', 'industry', 'location', 'owner'].map((k) => ({ [k]: new RegExp(q, 'i') }));
     const [items, total, counts] = await Promise.all([
-      Company.find(filter).sort({ updatedAt: -1 }).skip((page - 1) * limit).limit(limit).lean(),
+      Company.find(filter).sort({ updatedAt: -1, _id: -1 }).skip((page - 1) * limit).limit(limit).lean(),
       Company.countDocuments(filter),
       Company.aggregate([{ $group: { _id: '$stage', n: { $sum: 1 } } }]),
     ]);

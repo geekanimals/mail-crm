@@ -277,6 +277,7 @@ function CompanyPanel({ id, onClose, convertFirst }) {
             <div>
               <b>{p.name || p.email}</b>{p.title && <span className="muted"> · {p.title}</span>}
               <small>{[p.email, p.phone].filter(Boolean).join(' · ') || 'no email / phone'}</small>
+              {p.referredBy && <small className="pl-ref">Referred by {p.referredBy}</small>}
               <small>{p.sent ? `${p.sent} email(s) sent · last ${date(p.lastSentAt)}` : 'Not emailed yet'}{p.linkedin && <> · <a href={p.linkedin} target="_blank" rel="noopener noreferrer">LinkedIn</a></>}</small>
             </div>
             <div className="row">
@@ -388,6 +389,7 @@ function Messages({ list, onSend, hint }) {
 }
 
 const css = `
+.pl-ref { color: #0b87a5; font-weight: 600; }
 .pl-chips { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .pl-chip { display: inline-flex; align-items: center; gap: 4px; background: var(--c-100); color: var(--c-700); font-weight: 600; font-size: 13px; padding: 5px 6px 5px 12px; border-radius: 99px; }
 .pl-chip button { border: 0; background: none; color: inherit; cursor: pointer; display: grid; place-items: center; padding: 2px; border-radius: 50%; }

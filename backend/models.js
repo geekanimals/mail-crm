@@ -22,6 +22,7 @@ const contactSchema = new Schema(
     signal: { type: String, default: '' }, // buying signal
     notes: { type: String, default: '' }, // remarks
     leadDate: { type: String, default: '' },
+    referredBy: { type: String, default: '' }, // came as a referral from this person (same company)
     source: { type: String, default: '' }, // which file / sheet it came from
     // every column from the uploaded sheet, exactly as it was (A to Z)
     fields: [{ _id: false, k: String, v: String }],

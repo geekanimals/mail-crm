@@ -11,11 +11,11 @@ const STAGE = { cold: 'Cold lead', hot: 'Hot lead', opportunity: 'Opportunity', 
 const EMPTY = { name: '', email: '', company: '', title: '', phone: '', linkedin: '', stage: 'cold' };
 const DETAILS = [
   ['title', 'Designation'], ['phone', 'Phone'], ['linkedin', 'LinkedIn'], ['website', 'Website'], ['industry', 'Industry'],
-  ['location', 'Location'], ['signal', 'Buying signal'], ['leadDate', 'Lead date'], ['source', 'Source'], ['batch', 'Upload'],
+  ['location', 'Location'], ['signal', 'Buying signal'], ['referredBy', 'Referred by'], ['leadDate', 'Lead date'], ['source', 'Source'], ['batch', 'Upload'],
 ];
 const EDITABLE = [
   ['name', 'Name'], ['email', 'Email'], ['company', 'Company'], ['title', 'Designation'], ['phone', 'Phone'], ['linkedin', 'LinkedIn'],
-  ['website', 'Website'], ['industry', 'Industry'], ['location', 'Location'], ['signal', 'Buying signal'], ['leadDate', 'Lead date'], ['notes', 'Notes'],
+  ['website', 'Website'], ['industry', 'Industry'], ['location', 'Location'], ['signal', 'Buying signal'], ['referredBy', 'Referred by'], ['leadDate', 'Lead date'], ['notes', 'Notes'],
 ];
 // columns from the uploaded sheets that already have their own column in the table
 const CORE = /^(dm_)?(name|e-?mail|phone|mobile|title|designation|linkedin)$|^company(_| )?name$|^company$|^email_(subject|body)$|^(subject|body)(_\d+)?$/i;

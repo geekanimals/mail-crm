@@ -52,6 +52,7 @@ const RULES = {
   signal: { re: [/buying signal/i, /^signal$/i], not: /x/ },
   notes: { re: [/^remarks?$/i, /^notes?$/i, /remark/i], not: /evidence|lead notes/i },
   leadDate: { re: [/lead date/i, /date_added|date added/i], not: /x/ },
+  referredBy: { re: [/referr?ed.?by/i], not: /x/ },
   sentDate: { re: [/sent date/i, /last (emailed|contacted)/i], not: /x/ },
   status: { re: [/^status$/i, /^lead status$/i, /^stage$/i], not: /x/ },
 };
@@ -95,13 +96,14 @@ export function rowToLead(headers, row, map) {
     signal: cell('signal'),
     notes: cell('notes'),
     leadDate: cell('leadDate'),
+    referredBy: cell('referredBy'),
     sentDate: cell('sentDate'),
     sheetStatus: cell('status'),
     fields: cleanFields(headers.map((k, i) => ({ k, v: row[i] }))),
   };
 }
 
-const INFO = ['name', 'company', 'title', 'phone', 'linkedin', 'website', 'industry', 'location', 'signal', 'notes', 'leadDate'];
+const INFO = ['name', 'company', 'title', 'phone', 'linkedin', 'website', 'industry', 'location', 'signal', 'notes', 'leadDate', 'referredBy'];
 
 /**
  * Save one person. Finds them by email (or, without email, by name in the same company).
