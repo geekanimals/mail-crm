@@ -186,7 +186,7 @@ export default function ImportPage() {
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState(null);
   const [defaults, setDefaults] = useState({ followUps: [], skipWeekends: true });
-  const [gap, setGap] = useState(2); // working days between follow-ups
+  const [gap, setGap] = useState(3); // working days between follow-ups (default 3)
   const [cc, setCc] = useState('');
   const [ownFollowUps, setOwnFollowUps] = useState(false);
   const [today, setToday] = useState(null);
@@ -197,7 +197,7 @@ export default function ImportPage() {
     api('/api/campaigns/defaults')
       .then((d) => {
         setDefaults(d);
-        setGap(d.intervalDays || 2);
+        setGap(d.intervalDays || 3);
         setCc(d.cc || '');
         setToday(new Date());
       })
@@ -256,7 +256,7 @@ export default function ImportPage() {
   const runImport = async (startNow) => {
     setBusy(true);
     const all = people();
-    const total = { inserted: 0, updated: 0, alreadyInCrm: 0, invalid: 0, addedToCampaign: 0 };
+    const total = { inserted: 0, updated: 0, alreadyInCrm: 0, invalid: 0, addedToCampaign: 0, noFirstEmail: 0 };
     let cid = campaignId;
     try {
       for (let i = 0; i < all.length; i += 500) {
@@ -599,9 +599,10 @@ export default function ImportPage() {
           <div className="im-result">
             <div><b>{num(result.inserted)}</b><span>New contacts</span></div>
             <div><b>{num(result.updated)}</b><span>Messages updated</span></div>
-            <div><b>{num(result.invalid)}</b><span>Invalid emails</span></div>
+            <div><b>{num(result.invalid)}</b><span>Invalid / no email</span></div>
             <div><b>{num(result.addedToCampaign)}</b><span>Started sending</span></div>
           </div>
+          {result.noFirstEmail > 0 && <p className="im-note">{num(result.noFirstEmail)} people were not started because their row has no first email (subject + body). Add it to the file and upload again.</p>}
           {result.campaignId && <p className="im-note"><Link className="im-link" href={`/campaigns?open=${result.campaignId}`}>Open the campaign to watch progress →</Link></p>}
         </div>
       )}

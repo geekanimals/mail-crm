@@ -124,6 +124,10 @@ router.post(
   '/:id/:action(pause|resume)',
   ah(async (req, res) => {
     const id = checkId(req.params.id);
+    const c = await Campaign.findById(id).select('status').lean();
+    if (!c) throw fail(404, 'Campaign not found');
+    if (req.params.action === 'pause' && c.status !== 'active') throw fail(400, 'Only a running campaign can be paused');
+    if (req.params.action === 'resume' && c.status !== 'paused') throw fail(400, 'Only a paused campaign can be resumed');
     const status = req.params.action === 'pause' ? 'paused' : (await Enrollment.exists({ campaign: id, status: 'active' })) ? 'active' : 'completed';
     await Campaign.updateOne({ _id: id }, { $set: { status } });
     if (status === 'active') setImmediate(() => runQueue());

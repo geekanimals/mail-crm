@@ -118,7 +118,11 @@ router.put(
   ah(async (req, res) => {
     const c = await Company.findById(checkId(req.params.id));
     if (!c) throw fail(404, 'Company not found');
-    if (req.body?.stage === 'account' && !['opportunity', 'account'].includes(c.stage)) throw fail(400, 'Only an Opportunity can become an account (use "Convert to account")');
+    if (req.body?.stage === 'account' && !['opportunity', 'account'].includes(c.stage)) {
+      // a company that was an account before (moved back by mistake) may go straight back
+      const wasAccount = c.tasks?.length || c.team?.length || c.messages?.length || (await User.exists({ role: 'client', companyId: c._id }));
+      if (!wasAccount) throw fail(400, 'Only an Opportunity can become an account (use "Convert to account")');
+    }
     Object.assign(c, details(req.body));
     const name = str(req.body?.name, 200);
     if (name && name !== c.name) {
@@ -233,6 +237,7 @@ router.post(
     const member = str(req.body?.member, 60);
     const task = str(req.body?.task, 2000);
     if (!member || !task) throw fail(400, 'Choose a team member and write the task');
+    if (!(await getTeam()).includes(member)) throw fail(400, `${member} is not on the Team page (or their login is turned off)`);
     const c = await Company.findOneAndUpdate(
       { _id: checkId(req.params.id), stage: { $in: ['account', 'old_client'] } },
       { $push: { tasks: { member, task, done: false, updatedAt: new Date() } }, $addToSet: { team: member } },
@@ -247,7 +252,11 @@ router.put(
   '/:id/tasks/:taskId',
   ah(async (req, res) => {
     const set = { 'tasks.$.updatedAt': new Date() };
-    if (req.body?.member !== undefined) set['tasks.$.member'] = str(req.body.member, 60);
+    if (req.body?.member !== undefined) {
+      const member = str(req.body.member, 60);
+      if (!(await getTeam()).includes(member)) throw fail(400, `${member} is not on the Team page`);
+      set['tasks.$.member'] = member;
+    }
     if (req.body?.task !== undefined) set['tasks.$.task'] = str(req.body.task, 2000);
     if (req.body?.done !== undefined) set['tasks.$.done'] = req.body.done === true;
     const c = await Company.findOneAndUpdate({ _id: checkId(req.params.id), 'tasks._id': checkId(req.params.taskId) }, { $set: set }, { new: true });

@@ -86,7 +86,8 @@ router.get(
 router.post(
   '/replies/:id/handled',
   ah(async (req, res) => {
-    await Reply.updateOne({ _id: checkId(req.params.id) }, { $set: { handled: req.body?.handled !== false } });
+    const r = await Reply.updateOne({ _id: checkId(req.params.id) }, { $set: { handled: req.body?.handled !== false } });
+    if (!r.matchedCount) throw fail(404, 'Reply not found');
     res.json({ ok: true });
   })
 );

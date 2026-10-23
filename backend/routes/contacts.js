@@ -168,6 +168,7 @@ router.post(
 
     // Start sending: into a chosen campaign, or a new one named after the file
     let added = 0;
+    let noFirstEmail = 0;
     let campaignId = null;
     const ids = [...inserted.filter((c) => c.status === 'new').map((c) => c._id), ...updatedIds]; // only people who can get emails
     let campaign = mongoose.isValidObjectId(req.body.campaignId) ? await Campaign.findById(req.body.campaignId) : null;
@@ -183,11 +184,11 @@ router.post(
       });
     }
     if (campaign && ids.length) {
-      added = (await enroll(campaign, { contactIds: ids })).added;
+      ({ added, noFirstEmail } = await enroll(campaign, { contactIds: ids }));
       campaignId = campaign._id;
       setImmediate(() => runQueue());
     }
-    res.json({ inserted: inserted.length, updated, alreadyInCrm: existing.size, invalid, addedToCampaign: added, campaignId, batch, companies });
+    res.json({ inserted: inserted.length, updated, alreadyInCrm: existing.size, invalid, addedToCampaign: added, noFirstEmail, campaignId, batch, companies });
   })
 );
 

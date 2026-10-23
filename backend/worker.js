@@ -135,6 +135,13 @@ export async function enroll(campaign, { contactIds, batch, onlyNew = true } = {
   const filter = { status: onlyNew ? 'new' : { $in: ['new', 'contacted'] }, email: { $type: 'string' } };
   if (contactIds?.length) filter._id = { $in: contactIds };
   if (batch) filter.batch = batch;
+  // a campaign without its own first email (made from a file) can only start people whose file row had one
+  let noFirstEmail = 0;
+  if (!campaign.body) {
+    const hasOwn = { $or: [{ 'messages.0.body': { $nin: [null, ''] } }, { customBody: { $nin: [null, ''] } }] };
+    noFirstEmail = await Contact.countDocuments({ ...filter, $nor: [hasOwn] });
+    Object.assign(filter, hasOwn);
+  }
   const ids = (await Contact.find(filter).select('_id').lean()).map((c) => c._id);
   // skip people already in this campaign or in another running sequence
   const busy = new Set(
@@ -148,7 +155,7 @@ export async function enroll(campaign, { contactIds, batch, onlyNew = true } = {
     added = e.insertedDocs?.length || 0;
   }
   if (added && campaign.status !== 'paused') await Campaign.updateOne({ _id: campaign._id }, { $set: { status: 'active' } });
-  return { added, skipped: ids.length - added };
+  return { added, skipped: ids.length - added, noFirstEmail };
 }
 
 /* ---------------- sending ---------------- */

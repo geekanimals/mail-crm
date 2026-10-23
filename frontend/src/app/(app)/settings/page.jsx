@@ -153,7 +153,7 @@ const css = `
 .st-input { flex: 1; min-width: 180px; }
 .st-sub { margin-bottom: 12px; }
 .st-link { color: var(--c-700); font-weight: 600; }
-.st-sub code, .st-grid code { background: #f1f5f9; padding: 1px 6px; border-radius: 6px; font-size: 12px; }
+.st-sub code, .st-grid code { background: #f1f5f9; padding: 1px 6px; border-radius: 6px; font-size: 12px; white-space: nowrap; word-break: normal; }
 .st-fus { display: flex; flex-direction: column; gap: 8px; }
 .st-fus details { border: 1px solid rgba(50,193,223,.22); border-radius: 12px; padding: 10px 14px; background: rgba(255,255,255,.55); }
 .st-fus summary { cursor: pointer; font-weight: 600; font-size: 13.5px; color: var(--c-700); }

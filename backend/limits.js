@@ -14,8 +14,15 @@ const limiter = (windowMs, limit, message, extra = {}) =>
 
 const r = config.rate;
 
-// wrong ID/password: blocked for 15 min after too many tries (correct logins don't count)
-export const loginLimit = limiter(15 * 60000, r.loginAttempts, 'Too many wrong attempts. Try again in 15 minutes.', { skipSuccessfulRequests: true });
+// wrong ID/password: blocked for 15 min after too many tries (correct logins don't count).
+// Counted per login ID + IP, so one person's typos never lock out the rest of an office on the same network;
+// a wider per-IP cap still stops someone guessing many different IDs.
+const perId = limiter(15 * 60000, r.loginAttempts, 'Too many wrong attempts. Try again in 15 minutes.', {
+  skipSuccessfulRequests: true,
+  keyGenerator: (req) => `${req.ip}|${String(req.body?.username || '').trim().toLowerCase().slice(0, 254)}`,
+});
+const perIp = limiter(15 * 60000, r.loginAttempts * 6, 'Too many wrong attempts from this network. Try again in 15 minutes.', { skipSuccessfulRequests: true });
+export const loginLimit = [perIp, perId];
 
 // every API call from the app
 export const apiLimit = limiter(60000, r.apiPerMinute, 'Too many requests. Please wait a minute.');
