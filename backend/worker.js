@@ -29,8 +29,64 @@ export function startOfToday() {
   const offset = Date.UTC(g.y, g.m - 1, g.d, g.h) - guess;
   return new Date(guess - offset);
 }
-export function inSendWindow() {
-  const n = tzNow();
+/** when an email due at `at` actually goes: the first moment inside sending hours (weekends skipped) */
+export function expectedSendAt(at) {
+  let t = Math.max(new Date(at).getTime(), Date.now());
+  const Q = 15 * 60000; // check every 15 minutes (works for half-hour time zones like India)
+  if (!inSendWindow(new Date(t))) t = Math.ceil(t / Q) * Q;
+  for (let i = 0; i < 4 * 24 * 15 && !inSendWindow(new Date(t)); i++) t += Q;
+  return new Date(t);
+}
+/** start of the next sending day after `t` (skips the rest of today's sending hours, weekends too) */
+function nextSendDay(t) {
+  const Q = 15 * 60000;
+  let x = Math.ceil(new Date(t).getTime() / Q) * Q;
+  for (let i = 0; i < 4 * 24 && inSendWindow(new Date(x)); i++) x += Q; // to the end of today's window
+  return expectedSendAt(new Date(x)).getTime();
+}
+const dayKey = (t) => { const n = tzNow(new Date(t)); return `${n.y}-${n.m}-${n.d}`; };
+
+/**
+ * The real date each running email goes out, like the queue sends them:
+ * oldest due first, at most DAILY_SEND_LIMIT a day and HOURLY_SEND_LIMIT an hour, inside sending hours, no weekends.
+ * Returns Map(enrollmentId -> Date). Paused people / campaigns are left out.
+ */
+let projected = { at: 0, map: null };
+export const forgetProjection = () => (projected = { at: 0, map: null });
+export async function projectQueue() {
+  if (projected.map && Date.now() - projected.at < 60000) return projected.map; // same answer for a minute (fast paging)
+  projected = { at: Date.now(), map: await buildProjection() };
+  return projected.map;
+}
+async function buildProjection() {
+  const campaigns = await Campaign.find({ status: 'active' }).select('_id').lean();
+  const list = await Enrollment.find({ status: 'active', paused: { $ne: true }, campaign: { $in: campaigns.map((c) => c._id) } })
+    .select('nextSendAt').sort({ nextSendAt: 1 }).lean();
+  const out = new Map();
+  if (!list.length) return out;
+  let cursor = expectedSendAt(new Date()).getTime();
+  const today = dayKey(Date.now());
+  let dayLeft = config.dailyLimit - (dayKey(cursor) === today ? await sentToday() : 0);
+  let hourLeft = config.hourlyLimit - (dayKey(cursor) === today ? await sentLastHour() : 0);
+  let hourStart = cursor;
+  for (const e of list) {
+    for (let guard = 0; guard < 400; guard++) {
+      const t = Math.max(cursor, expectedSendAt(e.nextSendAt).getTime());
+      if (dayKey(t) !== dayKey(cursor)) { cursor = t; dayLeft = config.dailyLimit; hourLeft = config.hourlyLimit; hourStart = t; }
+      else if (t > cursor) cursor = t;
+      if (cursor - hourStart >= 3600000) { hourStart = cursor; hourLeft = config.hourlyLimit; }
+      if (dayLeft <= 0) { cursor = nextSendDay(cursor); dayLeft = config.dailyLimit; hourLeft = config.hourlyLimit; hourStart = cursor; continue; }
+      if (hourLeft <= 0) { cursor = expectedSendAt(new Date(hourStart + 3600000)).getTime(); continue; }
+      out.set(String(e._id), new Date(cursor));
+      dayLeft--;
+      hourLeft--;
+      break;
+    }
+  }
+  return out;
+}
+export function inSendWindow(at = new Date()) {
+  const n = tzNow(at);
   if (config.skipWeekends && (n.wd === 'Sat' || n.wd === 'Sun')) return false;
   const { windowStart: a, windowEnd: b } = config;
   return a === b || (a < b ? n.h >= a && n.h < b : n.h >= a || n.h < b);
@@ -169,6 +225,20 @@ export const withSignature = (body) => (hasSignature(body) ? body : `${String(bo
  *  step 0  = first email -> from your file (subject_1/body_1 or subject/body)
  *  step 1+ = follow-ups  -> your own from the file if written, else the fixed ones in templates.js
  */
+/** working days to wait after email number `stepNo` (this person's own gap wins, then the campaign's) */
+export function gapFor(enr, campaign, stepNo) {
+  if (enr?.gapDays) return enr.gapDays;
+  const custom = !campaign?.fromFile && campaign?.followUps?.[stepNo - 1];
+  return custom ? custom.delayDays : campaign?.gapDays || config.intervalDays;
+}
+
+/** how many emails this person gets in total (first email + follow-ups) */
+export function totalSteps(campaign, contact) {
+  let n = 1;
+  while (n < 30 && pickEmail(campaign, contact, n)) n++;
+  return n;
+}
+
 export function pickEmail(campaign, contact, step) {
   const own = contact.messages || [];
   if (own[step]?.body) return { subject: own[step].subject, body: own[step].body };
@@ -208,7 +278,7 @@ async function sendStep(enr, campaign) {
 
   // claim the job so it can never be sent twice
   const claimed = await Enrollment.findOneAndUpdate(
-    { _id: enr._id, status: 'active', step: enr.step, nextSendAt: { $lte: new Date() } },
+    { _id: enr._id, status: 'active', paused: { $ne: true }, step: enr.step, nextSendAt: { $lte: new Date() } },
     { $set: { nextSendAt: new Date(Date.now() + DAY) } }
   );
   if (!claimed) return 'skipped';
@@ -244,8 +314,7 @@ async function sendStep(enr, campaign) {
   const now = new Date();
   // next follow-up: after N working days (Sat/Sun not counted). null = this was the last email.
   const next = Boolean(pickEmail(campaign, contact, stepNo)?.body);
-  const custom = !campaign.fromFile && campaign.followUps?.[stepNo - 1];
-  const gap = custom ? custom.delayDays : campaign.gapDays || config.intervalDays;
+  const gap = gapFor(enr, campaign, stepNo);
   const progress = { step: stepNo, lastSentAt: now, attempts: 0, lastError: null, ...(stepNo === 1 ? { rootSubject: email.subject } : {}) };
   try {
     const r = await Enrollment.updateOne(
@@ -279,7 +348,7 @@ export async function runQueue({ force = false } = {}) {
     let left = Math.min(dayLeft, hourLeft);
 
     const campaigns = new Map((await Campaign.find({ status: 'active' })).map((c) => [String(c._id), c]));
-    const due = await Enrollment.find({ status: 'active', campaign: { $in: [...campaigns.keys()] }, nextSendAt: { $lte: new Date() } })
+    const due = await Enrollment.find({ status: 'active', paused: { $ne: true }, campaign: { $in: [...campaigns.keys()] }, nextSendAt: { $lte: new Date() } })
       .sort({ nextSendAt: 1 })
       .limit(Math.min(left, 200));
     if (!due.length) return Object.assign(result, { reason: 'nothing due' });
@@ -301,7 +370,7 @@ export async function runQueue({ force = false } = {}) {
       if (holdFollowUps && e.step > 0) continue;
       const fresh = await Enrollment.findById(e._id);
       const campaign = campaigns.get(String(e.campaign));
-      if (fresh?.status !== 'active' || (await Campaign.findById(campaign._id).select('status').lean())?.status !== 'active') continue;
+      if (fresh?.status !== 'active' || fresh.paused || (await Campaign.findById(campaign._id).select('status').lean())?.status !== 'active') continue;
       const r = await sendStep(fresh, campaign);
       if (r === 'sent') {
         result.sent++;

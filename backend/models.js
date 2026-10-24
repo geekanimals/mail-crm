@@ -164,6 +164,8 @@ const enrollmentSchema = new Schema(
     status: { type: String, enum: ['active', 'replied', 'completed', 'unsubscribed', 'bounced', 'failed', 'stopped'], default: 'active' },
     step: { type: Number, default: 0 },
     nextSendAt: { type: Date, default: () => new Date() },
+    paused: { type: Boolean, default: false }, // paused by hand: no emails until played again
+    gapDays: { type: Number, min: 1, max: 60 }, // this person's own working days between follow-ups (empty = campaign default)
     rootSubject: String,
     messageIds: [String],
     lastSentAt: Date,

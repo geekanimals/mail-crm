@@ -5,7 +5,7 @@ import { cleanFields, mapColumns } from '../sheets.js';
 import { config } from '../config.js';
 import { fill, parseCc } from '../mail.js';
 import { FOLLOW_UPS } from '../templates.js';
-import { addWorkingDays, enroll, newText, pickEmail, withSignature, markReplied, markUnsubscribed, runQueue, stopAll } from '../worker.js';
+import { addWorkingDays, enroll, expectedSendAt, forgetProjection, gapFor, projectQueue, newText, pickEmail, totalSteps, withSignature, markReplied, markUnsubscribed, runQueue, stopAll } from '../worker.js';
 import { ah, checkId, fail, str, validEmail } from '../utils.js';
 
 const router = Router();
@@ -40,25 +40,111 @@ async function linkCompanies(rows, stage) {
 }
 const rowStage = (r, fallback) => (STAGES.includes(String(r?.pipeline || '').trim().toLowerCase()) ? String(r.pipeline).trim().toLowerCase() : fallback);
 
+// the filter behind the list (also used by "select all" bulk actions)
+const SEQ = ['running', 'paused', 'none'];
+async function listFilter(q0 = {}) {
+  const filter = {};
+  const q = str(q0.search, 100).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  if (q) filter.$or = ['name', 'email', 'company', 'title', 'phone', 'location'].map((k) => ({ [k]: new RegExp(q, 'i') }));
+  if (mongoose.isValidObjectId(q0.companyId)) filter.companyId = q0.companyId;
+  if (STATUSES.includes(q0.status)) filter.status = q0.status;
+  if (str(q0.batch)) filter.batch = str(q0.batch);
+  if (SEQ.includes(q0.seq)) {
+    // running = follow-ups going on, paused = paused by hand, none = not in any running sequence
+    const ids = await Enrollment.distinct('contact', { status: 'active', ...(q0.seq === 'paused' ? { paused: true } : q0.seq === 'running' ? { paused: { $ne: true } } : {}) });
+    filter._id = q0.seq === 'none' ? { $nin: ids } : { $in: ids };
+  }
+  return filter;
+}
+
+/** follow-up progress for each contact: sent x of y, next date, gap, paused */
+async function followUpInfo(contacts) {
+  const ids = contacts.map((c) => c._id);
+  if (!ids.length) return {};
+  const [enrs, msgs] = await Promise.all([
+    Enrollment.find({ contact: { $in: ids } }).sort({ createdAt: -1 }).populate('campaign').lean(),
+    Contact.find({ _id: { $in: ids } }).select('messages customBody customSubject').lean(),
+  ]);
+  const own = new Map(msgs.map((m) => [String(m._id), m]));
+  const queue = await projectQueue(); // real send dates (daily / hourly limits)
+  const out = {};
+  for (const e of enrs) {
+    const k = String(e.contact);
+    // show the running sequence first, else the latest one
+    if (out[k] && !(e.status === 'active' && out[k].status !== 'active')) continue;
+    const campaign = e.campaign || { fromFile: true };
+    const active = e.status === 'active';
+    out[k] = {
+      id: e._id,
+      campaign: campaign.name || '',
+      status: e.status,
+      paused: Boolean(e.paused),
+      sent: e.step,
+      total: totalSteps(campaign, own.get(k) || {}),
+      nextSendAt: active ? e.nextSendAt : null,
+      dueAt: active && e.nextSendAt ? expectedSendAt(e.nextSendAt) : null, // its turn by days alone
+      nextGoesAt: active && e.nextSendAt ? queue.get(String(e._id)) || expectedSendAt(e.nextSendAt) : null, // when it really goes: queue order + daily limit + sending hours
+      lastSentAt: e.lastSentAt || null,
+      gapDays: e.gapDays || null, // this person's own gap
+      gap: gapFor(e, campaign, Math.max(1, e.step)), // the gap in use now
+      lastError: e.lastError || null,
+    };
+  }
+  return out;
+}
+
 // list + search + filter
 router.get(
   '/',
   ah(async (req, res) => {
     const page = Math.max(1, parseInt(req.query.page) || 1);
     const limit = 25;
-    const filter = {};
-    const q = str(req.query.search, 100).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    if (q) filter.$or = ['name', 'email', 'company', 'title', 'phone', 'location'].map((k) => ({ [k]: new RegExp(q, 'i') }));
-    if (mongoose.isValidObjectId(req.query.companyId)) filter.companyId = req.query.companyId;
-    if (STATUSES.includes(req.query.status)) filter.status = req.query.status;
-    if (str(req.query.batch)) filter.batch = str(req.query.batch);
-    const [items, total, counts, batches] = await Promise.all([
-      Contact.find(filter).sort({ createdAt: -1, _id: -1 }).skip((page - 1) * limit).limit(limit).select('-messages -customBody').populate('companyId', 'name stage owner'),
+    const filter = await listFilter(req.query);
+    const [items, total, counts, batches, running, paused] = await Promise.all([
+      Contact.find(filter).sort({ createdAt: -1, _id: -1 }).skip((page - 1) * limit).limit(limit).select('-messages -customBody -unsubscribeToken -__v').populate('companyId', 'name stage owner').lean(),
       Contact.countDocuments(filter),
       Contact.aggregate([{ $group: { _id: '$status', n: { $sum: 1 } } }]),
       Contact.distinct('batch'),
+      Enrollment.countDocuments({ status: 'active', paused: { $ne: true } }),
+      Enrollment.countDocuments({ status: 'active', paused: true }),
     ]);
-    res.json({ items, total, page, pages: Math.ceil(total / limit) || 1, counts: Object.fromEntries(counts.map((c) => [c._id, c.n])), batches: batches.filter(Boolean) });
+    const info = await followUpInfo(items);
+    for (const c of items) c.followUp = info[String(c._id)] || null;
+    res.json({ items, total, page, pages: Math.ceil(total / limit) || 1, counts: Object.fromEntries(counts.map((c) => [c._id, c.n])), seqCounts: { running, paused }, batches: batches.filter(Boolean) });
+  })
+);
+
+// follow-ups for one or many people: pause, play, or set their own gap (working days between emails).
+// body: { ids: [...] } or { all: true, search, status, batch, seq } (= everyone in the current list) + { action, gapDays }
+router.post(
+  '/followups',
+  ah(async (req, res) => {
+    const { action } = req.body || {};
+    if (!['pause', 'play', 'gap'].includes(action)) throw fail(400, 'Unknown action');
+    forgetProjection(); // dates change - work them out again
+    let ids;
+    if (req.body.all) ids = await Contact.distinct('_id', await listFilter(req.body));
+    else ids = (Array.isArray(req.body.ids) ? req.body.ids : []).filter((x) => mongoose.isValidObjectId(x)).slice(0, 5000);
+    if (!ids.length) throw fail(400, 'Select at least one person');
+    const enrs = await Enrollment.find({ contact: { $in: ids }, status: 'active' }).populate('campaign').lean();
+    const out = { selected: ids.length, changed: 0, notRunning: ids.length - new Set(enrs.map((e) => String(e.contact))).size };
+    if (action === 'pause' || action === 'play') {
+      const r = await Enrollment.updateMany({ _id: { $in: enrs.map((e) => e._id) } }, { $set: { paused: action === 'pause' } });
+      out.changed = r.modifiedCount;
+      return res.json(out);
+    }
+    // gap: 0 / empty = back to the campaign default
+    const g = parseInt(req.body.gapDays, 10);
+    if (req.body.gapDays !== '' && req.body.gapDays != null && (!Number.isFinite(g) || g < 0 || g > 60)) throw fail(400, 'Days must be between 1 and 60');
+    const gapDays = g > 0 ? g : null;
+    for (const e of enrs) {
+      const set = { gapDays };
+      // already emailed: next follow-up = last email + the new gap. Not emailed yet: the first email keeps its date.
+      if (e.step > 0) set.nextSendAt = addWorkingDays(e.lastSentAt || new Date(), gapFor({ gapDays }, e.campaign || { fromFile: true }, e.step));
+      await Enrollment.updateOne({ _id: e._id, status: 'active' }, gapDays ? { $set: set } : { $set: { nextSendAt: set.nextSendAt ?? e.nextSendAt }, $unset: { gapDays: 1 } });
+      out.changed++;
+    }
+    res.json(out);
   })
 );
 
@@ -83,7 +169,8 @@ router.get(
       const first = planned[0]?.subject || '';
       planned.push({ subject: fill(m.subject?.trim() || (i === 0 ? '' : `Re: ${first.replace(/^re:\s*/i, '')}`), contact), body: fill(withSignature(m.body), contact) });
     }
-    res.json({ contact, emails, replies: replies.map((r) => ({ ...r, snippet: newText(r.snippet) || r.snippet })), planned });
+    const followUp = (await followUpInfo([contact]))[String(contact._id)] || null;
+    res.json({ contact, emails, replies: replies.map((r) => ({ ...r, snippet: newText(r.snippet) || r.snippet })), planned, followUp });
   })
 );
 

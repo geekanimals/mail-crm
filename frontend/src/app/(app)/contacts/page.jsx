@@ -3,10 +3,42 @@
 // email status, and the full email history. Replied / unsubscribed / bounced people are never emailed again.
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
-import { LuChevronLeft, LuChevronRight, LuExternalLink, LuFileSpreadsheet, LuPencil, LuUserPlus } from 'react-icons/lu';
+import { LuCalendarClock, LuChevronLeft, LuChevronRight, LuExternalLink, LuFileSpreadsheet, LuPause, LuPencil, LuPlay, LuUserPlus, LuX } from 'react-icons/lu';
 import { api, date, num, notify, stepName } from '@/lib/api';
 
 const TABS = ['', 'new', 'contacted', 'replied', 'unsubscribed', 'bounced'];
+const SEQS = [['', 'Everyone'], ['running', 'Follow-ups running'], ['paused', 'Paused'], ['none', 'Not in follow-ups']];
+const DONE = { completed: 'All emails sent', replied: 'Stopped - replied', unsubscribed: 'Stopped - unsubscribed', bounced: 'Stopped - bounced', failed: 'Stopped - error', stopped: 'Stopped' };
+// "Mon, 26 Oct" (+ ", 9:00 am" for the next send)
+const dayDate = (d, time) => {
+  if (!d) return '';
+  const x = new Date(d);
+  const day = x.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' });
+  return time ? `${day}, ${x.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })}` : day;
+};
+
+// follow-up progress for one person: "3 of 7 sent", next date, gap, paused
+function FollowUp({ f }) {
+  if (!f) return <span className="muted small">Not in follow-ups</span>;
+  const pct = Math.min(100, Math.round((f.sent / Math.max(1, f.total)) * 100));
+  const active = f.status === 'active';
+  return (
+    <div className="fu">
+      <div className="fu-top"><b>{f.sent} of {f.total} sent</b>{active && f.paused && <span className="fu-tag paused">Paused</span>}</div>
+      <div className="fu-bar"><i style={{ width: `${pct}%` }} className={active && f.paused ? 'paused' : ''} /></div>
+      {f.sent > 0 && f.lastSentAt && <small>Last sent: <b>{dayDate(f.lastSentAt)}</b>{f.sent > 1 ? ` (${f.sent === 2 ? 'follow-up 1' : `follow-up ${f.sent - 1}`})` : ' (first email)'}</small>}
+      <small>
+        {!active ? DONE[f.status] || f.status
+          : f.paused ? <>Next: <b>paused</b> - nothing goes until you play it</>
+          : <>Next: {f.sent === 0 ? 'first email' : `follow-up ${f.sent}`} on <b>{dayDate(f.nextGoesAt || f.nextSendAt, true)}</b></>}
+      </small>
+      {active && !f.paused && f.dueAt && f.nextGoesAt && dayDate(f.dueAt) !== dayDate(f.nextGoesAt) && (
+        <small className="fu-wait">Due {dayDate(f.dueAt)} - waits in the queue (daily send limit)</small>
+      )}
+      {active && f.sent < f.total && <small>Every {f.gap} working day{f.gap === 1 ? '' : 's'}{f.gapDays ? ' (own)' : ''}</small>}
+    </div>
+  );
+}
 const STAGE = { cold: 'Cold lead', hot: 'Hot lead', opportunity: 'Opportunity', account: 'Account', old_client: 'Old client' };
 const EMPTY = { name: '', email: '', company: '', title: '', phone: '', linkedin: '', stage: 'cold' };
 const DETAILS = [
@@ -33,10 +65,53 @@ export default function ContactsPage() {
   const [form, setForm] = useState(null);
   const [open, setOpen] = useState(null); // contact details + history
   const [edit, setEdit] = useState(null);
+  const [seq, setSeq] = useState(''); // running / paused / not in follow-ups
+  const [picked, setPicked] = useState(() => new Set()); // selected people (ids)
+  const [allPicked, setAllPicked] = useState(false); // everyone in the current list, every page
+  const [bulkDays, setBulkDays] = useState('');
+  const [daysFor, setDaysFor] = useState(null); // { id, value } - the row whose days are being changed
+  const [busy, setBusy] = useState(false);
 
   const load = useCallback(() => {
-    api('/api/contacts', { query: { search, status, page } }).then(setData).catch((e) => notify(e.message, 'error'));
-  }, [search, status, page]);
+    api('/api/contacts', { query: { search, status, page, seq } }).then(setData).catch((e) => notify(e.message, 'error'));
+  }, [search, status, page, seq]);
+
+  // pause / play / set days - for one person (ids = [id]) or for the selection
+  const followUps = async (action, { ids, gapDays } = {}) => {
+    const many = !ids;
+    const body = many ? (allPicked ? { all: true, search, status, seq } : { ids: [...picked] }) : { ids };
+    const n = many ? (allPicked ? data.total : picked.size) : 1;
+    if (many && n > 1 && action !== 'play' && !window.confirm(action === 'pause' ? `Pause follow-ups for ${n} people?` : gapDays ? `Set ${gapDays} working days between follow-ups for ${n} people?` : `Reset ${n} people to the campaign's default days?`)) return;
+    setBusy(true);
+    try {
+      const r = await api('/api/contacts/followups', { method: 'POST', body: { ...body, action, gapDays } });
+      const what = action === 'pause' ? 'paused' : action === 'play' ? 'playing again' : 'updated';
+      notify(r.changed ? `${r.changed} ${r.changed === 1 ? 'person' : 'people'} ${what}${r.notRunning ? ` · ${r.notRunning} not in running follow-ups (skipped)` : ''}` : 'Nobody changed - no running follow-ups in the selection', r.changed ? 'success' : 'error');
+      setDaysFor(null);
+      load();
+      if (open) showDetails(open.contact);
+    } catch (e) {
+      notify(e.message, 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+  const toggle = (id) => {
+    const s = new Set(picked);
+    s.has(id) ? s.delete(id) : s.add(id);
+    setPicked(s);
+    setAllPicked(false);
+  };
+  const pageIds = (data?.items || []).map((c) => c._id);
+  const pageAll = pageIds.length > 0 && pageIds.every((id) => picked.has(id));
+  const togglePage = () => {
+    const s = new Set(picked);
+    pageIds.forEach((id) => (pageAll ? s.delete(id) : s.add(id)));
+    setPicked(s);
+    setAllPicked(false);
+  };
+  const clearPick = () => { setPicked(new Set()); setAllPicked(false); };
+  const pickedCount = allPicked ? data?.total || 0 : picked.size;
 
   useEffect(() => {
     const t = setTimeout(load, 250);
@@ -138,12 +213,42 @@ export default function ContactsPage() {
       <div className="card">
         <div className="tabs">
           {TABS.map((s) => (
-            <button key={s} className={status === s ? 'on' : ''} onClick={() => { setStatus(s); setPage(1); }}>
+            <button key={s} className={status === s ? 'on' : ''} onClick={() => { setStatus(s); setPage(1); clearPick(); }}>
               {s || 'All'} <span className="ct-count">{num(s ? counts[s] : total)}</span>
             </button>
           ))}
         </div>
-        <input className="ct-search" placeholder="Search name, email, company, designation, phone or city…" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} />
+        <input className="ct-search" placeholder="Search name, email, company, designation, phone or city…" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); clearPick(); }} />
+        <div className="row fu-filters">
+          {SEQS.map(([k, l]) => (
+            <button key={k} className={`fu-chip ${seq === k ? 'on' : ''}`} onClick={() => { setSeq(k); setPage(1); clearPick(); }}>
+              {l}{k === 'running' && data?.seqCounts ? ` · ${num(data.seqCounts.running)}` : ''}{k === 'paused' && data?.seqCounts ? ` · ${num(data.seqCounts.paused)}` : ''}
+            </button>
+          ))}
+        </div>
+
+        {pickedCount > 0 && (
+          <div className="fu-bulk">
+            <div className="fu-bulk-who">
+              <b>{num(pickedCount)} selected</b>
+              {!allPicked && pageAll && data.total > pageIds.length && (
+                <button className="link" onClick={() => setAllPicked(true)}>Select all {num(data.total)} in this list</button>
+              )}
+              {allPicked && <span className="muted small">Everyone in this list (all pages)</span>}
+            </div>
+            <div className="row fu-bulk-do">
+              <label className="fu-days">
+                Days between follow-ups
+                <input type="number" min="1" max="60" placeholder="e.g. 5" value={bulkDays} onChange={(e) => setBulkDays(e.target.value)} />
+              </label>
+              <button className="btn sm" disabled={busy || !(bulkDays > 0)} onClick={() => followUps('gap', { gapDays: Number(bulkDays) })}><LuCalendarClock /> Set days</button>
+              <button className="btn ghost sm" disabled={busy} onClick={() => followUps('gap', { gapDays: 0 })} title="Back to the campaign's default days">Default days</button>
+              <button className="btn ghost sm" disabled={busy} onClick={() => followUps('pause')}><LuPause /> Pause</button>
+              <button className="btn ghost sm" disabled={busy} onClick={() => followUps('play')}><LuPlay /> Play</button>
+              <button className="btn ghost sm" onClick={clearPick}><LuX /> Clear</button>
+            </div>
+          </div>
+        )}
 
         {!data ? (
           <p className="muted">Loading…</p>
@@ -154,20 +259,23 @@ export default function ContactsPage() {
             <table className="cards">
               <thead>
                 <tr>
-                  <th className="ct-sticky">Name</th><th>Company</th><th>Phone</th><th>LinkedIn</th><th>Email status</th><th>Last emailed</th>
+                  <th className="ct-sticky"><span className="ct-namehead"><input type="checkbox" className="ct-check" checked={pageAll} onChange={togglePage} title="Select everyone on this page" /> Name</span></th><th>Company</th><th>Follow-ups</th><th>Phone</th><th>LinkedIn</th><th>Email status</th><th>Last emailed</th>
                   {extra.map((k) => <th key={k}>{label(k)}</th>)}
                   <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {data.items.map((c) => (
-                  <tr key={c._id}>
+                  <tr key={c._id} className={allPicked || picked.has(c._id) ? 'ct-picked' : ''}>
                     <td className="ct-sticky">
+                      <div className="ct-namecell">
+                      <input type="checkbox" className="ct-check" checked={allPicked || picked.has(c._id)} disabled={allPicked} onChange={() => toggle(c._id)} />
                       <button className="ct-name" onClick={() => showDetails(c)}>
                         <b>{c.name || c.email || '—'}</b>
                         {c.title && <small className="ct-title">{c.title}</small>}
                         <small>{c.email || 'no email'}</small>
                       </button>
+                      </div>
                     </td>
                     <td data-label="Company">
                       {c.companyId ? (
@@ -177,10 +285,32 @@ export default function ContactsPage() {
                         </Link>
                       ) : (c.company || '—')}
                     </td>
+                    <td data-label="Follow-ups" className="fu-cell">
+                      <FollowUp f={c.followUp} />
+                      <div className="row fu-row">
+                        {c.followUp?.status === 'active' && (
+                          c.followUp.paused
+                            ? <button className="btn ghost sm fu-play" disabled={busy} onClick={() => followUps('play', { ids: [c._id] })}><LuPlay /> Play</button>
+                            : <button className="btn ghost sm" disabled={busy} onClick={() => followUps('pause', { ids: [c._id] })}><LuPause /> Pause</button>
+                        )}
+                        {c.followUp?.status === 'active' && c.followUp.sent < c.followUp.total && (
+                          daysFor?.id === c._id ? (
+                            <span className="fu-inline">
+                              <input type="number" min="1" max="60" autoFocus value={daysFor.value} onChange={(e) => setDaysFor({ ...daysFor, value: e.target.value })}
+                                onKeyDown={(e) => { if (e.key === 'Enter' && daysFor.value > 0) followUps('gap', { ids: [c._id], gapDays: Number(daysFor.value) }); if (e.key === 'Escape') setDaysFor(null); }} />
+                              <button className="btn sm" disabled={busy || !(daysFor.value > 0)} onClick={() => followUps('gap', { ids: [c._id], gapDays: Number(daysFor.value) })}>Save</button>
+                              <button className="btn ghost sm" onClick={() => setDaysFor(null)}>Cancel</button>
+                            </span>
+                          ) : (
+                            <button className="btn ghost sm" onClick={() => setDaysFor({ id: c._id, value: c.followUp.gap })}><LuCalendarClock /> Days</button>
+                          )
+                        )}
+                      </div>
+                    </td>
                     <td data-label="Phone">{/^(none|n\/?a|-)$/i.test(c.phone || '') ? '—' : c.phone || '—'}</td>
                     <td data-label="LinkedIn">{empty(c.linkedin) ? '—' : <Value v={/^https?:/i.test(c.linkedin) ? c.linkedin : `https://${c.linkedin}`} />}</td>
                     <td data-label="Email status"><span className={`badge ${c.status}`}>{c.status}</span></td>
-                    <td data-label="Last emailed">{date(c.lastContactedAt)}</td>
+                    <td data-label="Last emailed">{date(c.lastContactedAt || c.followUp?.lastSentAt)}</td>
                     {extra.map((k) => {
                       const v = cellOf(c, k);
                       return <td key={k} data-label={label(k)} className="ct-cell" title={empty(v) ? '' : v}>{empty(v) ? '—' : <Value v={v} />}</td>;
@@ -224,6 +354,20 @@ export default function ContactsPage() {
               <span className={`badge ${oc.status}`}>{oc.status}</span>
               {company && <Link href={`/pipeline?open=${company._id}`} className={`stage ${company.stage}`}>{company.name} · {STAGE[company.stage]}</Link>}
             </div>
+
+            {open.followUp && !edit && (
+              <div className="fu-panel">
+                <FollowUp f={open.followUp} />
+                {open.followUp.status === 'active' && (
+                  <div className="row">
+                    {open.followUp.paused
+                      ? <button className="btn sm" disabled={busy} onClick={() => followUps('play', { ids: [oc._id] })}><LuPlay /> Play</button>
+                      : <button className="btn ghost sm" disabled={busy} onClick={() => followUps('pause', { ids: [oc._id] })}><LuPause /> Pause</button>}
+                    {open.followUp.gapDays && <button className="btn ghost sm" disabled={busy} onClick={() => followUps('gap', { ids: [oc._id], gapDays: 0 })}>Default days</button>}
+                  </div>
+                )}
+              </div>
+            )}
 
             {edit ? (
               <form className="ct-edit" onSubmit={saveEdit}>
@@ -346,6 +490,34 @@ const css = `
 .ct-actions .btn:hover { background: var(--c-100); color: var(--c-700); transform: none; }
 .ct-actions .ct-del:hover { background: rgba(225,29,72,.08); color: #e11d48; }
 .ct-pager { justify-content: center; margin-top: 14px; }
+.ct-namecell, .ct-namehead { display: flex; align-items: center; gap: 10px; }
+.ct-check { width: 16px; height: 16px; accent-color: var(--c); cursor: pointer; flex: none; margin: 0; }
+.ct-wide tbody tr.ct-picked td, .ct-wide tbody tr.ct-picked td.ct-sticky { background: #eefafd; }
+.fu-filters { gap: 8px; flex-wrap: wrap; margin: -4px 0 14px; }
+.fu-chip { border: 1px solid rgba(148,163,184,.35); background: #fff; color: #475569; border-radius: 99px; padding: 5px 12px; font-size: 13px; cursor: pointer; }
+.fu-chip.on { background: var(--c-100); border-color: var(--c-200); color: var(--c-700); font-weight: 600; }
+.fu-bulk { position: sticky; top: 8px; z-index: 5; display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; background: #f2fbfd; border: 1px solid var(--c-200); border-radius: 14px; padding: 10px 14px; margin-bottom: 14px; box-shadow: 0 8px 24px -14px rgba(15,23,42,.25); }
+.fu-bulk-who { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.fu-bulk .link { background: none; border: 0; color: var(--c-700); font-weight: 600; cursor: pointer; padding: 0; font-size: 13px; text-decoration: underline; }
+.fu-bulk-do { gap: 8px; flex-wrap: wrap; align-items: center; }
+.fu-days { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #475569; }
+.fu-days input, .fu-inline input { width: 72px; padding: 6px 8px; }
+.fu-inline { display: inline-flex; align-items: center; gap: 6px; }
+.fu-cell { min-width: 220px; }
+.fu-row { gap: 4px; margin-top: 6px; flex-wrap: wrap; }
+.fu-row:empty { display: none; }
+.fu-row .btn { padding: 4px 10px; }
+.fu { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.fu-top { display: flex; align-items: center; gap: 8px; }
+.fu small { color: #64748b; font-size: 12px; }
+.fu small.fu-wait { color: #b45309; }
+.fu-bar { height: 6px; background: #e2e8f0; border-radius: 99px; overflow: hidden; width: 150px; }
+.fu-bar i { display: block; height: 100%; background: var(--c); border-radius: 99px; }
+.fu-bar i.paused { background: #f59e0b; }
+.fu-tag { font-size: 11px; font-weight: 700; padding: 1px 8px; border-radius: 99px; }
+.fu-tag.paused { background: #fef3c7; color: #b45309; }
+.ct-actions .fu-play { color: var(--c-700); font-weight: 600; }
+.fu-panel { background: rgba(255,255,255,.65); border: 1px solid rgba(148,163,184,.25); border-radius: 14px; padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
 .ct-overlay { position: fixed; inset: 0; background: rgba(14,42,51,.2); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); z-index: 40; display: flex; justify-content: flex-end; }
 .ct-panel { background: rgba(255,255,255,.9); backdrop-filter: blur(30px) saturate(180%); -webkit-backdrop-filter: blur(30px) saturate(180%); border-left: 1px solid rgba(255,255,255,.8); box-shadow: -20px 0 60px rgba(30,41,99,.15); width: 520px; max-width: 100%; height: 100%; overflow-y: auto; padding: 22px; display: flex; flex-direction: column; gap: 10px; }
 .ct-panel-head { justify-content: space-between; align-items: flex-start; flex-wrap: nowrap; }
