@@ -194,7 +194,9 @@ export async function enroll(campaign, { contactIds, batch, onlyNew = true } = {
   // a campaign without its own first email (made from a file) can only start people whose file row had one
   let noFirstEmail = 0;
   if (!campaign.body) {
-    const hasOwn = { $or: [{ 'messages.0.body': { $nin: [null, ''] } }, { customBody: { $nin: [null, ''] } }] };
+    // $gt '' = "has some text". (Not $nin [null, '']: MongoDB also reads "messages.0.body" as a field named "0"
+    // inside each message, finds nothing there, and then wrongly says the person has no first email.)
+    const hasOwn = { $or: [{ 'messages.0.body': { $gt: '' } }, { customBody: { $gt: '' } }] };
     noFirstEmail = await Contact.countDocuments({ ...filter, $nor: [hasOwn] });
     Object.assign(filter, hasOwn);
   }
