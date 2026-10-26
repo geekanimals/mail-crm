@@ -215,10 +215,11 @@ router.post(
     const seen = new Set();
     const valid = [];
     let invalid = 0;
+    const dupInFile = []; // same email twice in the file: only the first row is used
     for (const r of rows) {
       const email = validEmail(r?.email);
       if (!email) { invalid++; continue; }
-      if (seen.has(email)) continue;
+      if (seen.has(email)) { dupInFile.push(`${str(r.name, 80) || email} (${email})`); continue; }
       seen.add(email);
       const s = str(r.status, 40).toLowerCase();
       const status = /unsub/.test(s) ? 'unsubscribed' : /repl/.test(s) ? 'replied' : /bounce/.test(s) ? 'bounced' : /sent|contacted|emailed/.test(s) ? 'contacted' : 'new';
@@ -227,10 +228,14 @@ router.post(
 
     // People already in the CRM are skipped completely: only new, unique people are added
     // (nobody is duplicated, changed or emailed again by a re-upload).
-    const existingDocs = await Contact.find({ email: { $in: valid.map((v) => v.email) } }).select('email').lean();
+    const existingDocs = await Contact.find({ email: { $in: valid.map((v) => v.email) } }).select('email status').lean();
     const existing = new Map(existingDocs.map((c) => [c.email, c]));
     const updated = 0;
-    const updatedIds = [];
+    // ...except people saved earlier who never got any email (e.g. an upload that stopped half-way):
+    // they are started now instead of being stuck as "already in CRM" for ever.
+    const neverStarted = existingDocs.filter((c) => c.status === 'new');
+    const inSequence = new Set((await Enrollment.distinct('contact', { contact: { $in: neverStarted.map((c) => c._id) } })).map(String));
+    const updatedIds = neverStarted.filter((c) => !inSequence.has(String(c._id))).map((c) => c._id);
 
     const fresh = valid.filter((v) => !existing.has(v.email));
     const memory = new Map((await Suppression.find({ email: { $in: fresh.map((v) => v.email) } }).lean()).map((s) => [s.email, s.reason]));
@@ -252,9 +257,12 @@ router.post(
     // Start sending: into a chosen campaign, or a new one named after the file
     let added = 0;
     let noFirstEmail = 0;
+    let enrollError = null;
     let campaignId = null;
     const ids = [...inserted.filter((c) => c.status === 'new').map((c) => c._id), ...updatedIds]; // only people who can get emails
     let campaign = mongoose.isValidObjectId(req.body.campaignId) ? await Campaign.findById(req.body.campaignId) : null;
+    // same file uploaded again: use its campaign instead of making a second one
+    if (!campaign && req.body.startNow === true && ids.length) campaign = await Campaign.findOne({ name: batch, fromFile: true, status: { $in: ['draft', 'active', 'paused'] } });
     if (!campaign && req.body.startNow === true && ids.length) {
       const gap = parseInt(req.body.gapDays, 10);
       campaign = await Campaign.create({
@@ -267,11 +275,12 @@ router.post(
       });
     }
     if (campaign && ids.length) {
-      ({ added, noFirstEmail } = await enroll(campaign, { contactIds: ids }));
+      ({ added, noFirstEmail, error: enrollError } = await enroll(campaign, { contactIds: ids }));
       campaignId = campaign._id;
       setImmediate(() => runQueue());
     }
-    res.json({ inserted: inserted.length, updated, alreadyInCrm: existing.size, invalid, addedToCampaign: added, noFirstEmail, campaignId, batch, companies });
+    const resumed = campaign ? updatedIds.length : 0;
+    res.json({ inserted: inserted.length, updated, resumed, alreadyInCrm: existing.size - resumed, dupInFile, invalid, addedToCampaign: added, noFirstEmail, enrollError, campaignId, batch, companies });
   })
 );
 

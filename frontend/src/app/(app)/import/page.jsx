@@ -261,13 +261,15 @@ export default function ImportPage() {
   const runImport = async (startNow) => {
     setBusy(true);
     const all = people();
-    const total = { inserted: 0, updated: 0, alreadyInCrm: 0, invalid: 0, addedToCampaign: 0, noFirstEmail: 0 };
+    const total = { inserted: 0, updated: 0, resumed: 0, alreadyInCrm: 0, invalid: 0, addedToCampaign: 0, noFirstEmail: 0, dupInFile: [], enrollError: null };
     let cid = campaignId;
     try {
       for (let i = 0; i < all.length; i += CHUNK) {
         setProg(`${Math.min(i + CHUNK, all.length)} / ${all.length}`);
         const r = await api('/api/contacts/import', { method: 'POST', body: { rows: all.slice(i, i + CHUNK), batch, campaignId: cid || undefined, startNow, gapDays: gap, cc, stage: pstage } });
-        for (const k in total) total[k] += r[k] || 0;
+        for (const k in total) if (typeof total[k] === 'number') total[k] += r[k] || 0;
+        total.dupInFile.push(...(r.dupInFile || []));
+        total.enrollError = total.enrollError || r.enrollError || null;
         if (r.campaignId) cid = r.campaignId; // later chunks go into the same campaign
       }
       setResult({ ...total, campaignId: cid, startNow });
@@ -611,6 +613,9 @@ export default function ImportPage() {
             <div><b>{num(result.invalid)}</b><span>Invalid / no email</span></div>
             <div><b>{num(result.addedToCampaign)}</b><span>Started sending</span></div>
           </div>
+          {result.resumed > 0 && <p className="im-note">{num(result.resumed)} of them were already saved from an earlier upload but had never been emailed - they are started now.</p>}
+          {result.dupInFile?.length > 0 && <p className="im-note">{result.dupInFile.length} row(s) in the file repeat an email that is already in the file, so they were counted once: {result.dupInFile.join(', ')}.</p>}
+          {result.enrollError && <p className="im-note">Could not start some people: {result.enrollError}</p>}
           {result.noFirstEmail > 0 && <p className="im-note">{num(result.noFirstEmail)} people were not started because their row has no first email (subject + body). Add it to the file and upload again.</p>}
           {result.campaignId && <p className="im-note"><Link className="im-link" href={`/campaigns?open=${result.campaignId}`}>Open the campaign to watch progress →</Link></p>}
         </div>

@@ -205,13 +205,16 @@ export async function enroll(campaign, { contactIds, batch, onlyNew = true } = {
   );
   const docs = ids.filter((i) => !busy.has(String(i))).map((contact) => ({ campaign: campaign._id, contact }));
   let added = 0;
+  let error = null;
   try {
     added = (await Enrollment.insertMany(docs, { ordered: false })).length;
   } catch (e) {
-    added = e.insertedDocs?.length || 0;
+    added = e.insertedDocs?.length ?? e.result?.insertedCount ?? 0;
+    error = e.message;
+    console.error('[enroll] could not add people to the campaign:', e.message);
   }
   if (added && campaign.status !== 'paused') await Campaign.updateOne({ _id: campaign._id }, { $set: { status: 'active' } });
-  return { added, skipped: ids.length - added, noFirstEmail };
+  return { added, skipped: ids.length - added, noFirstEmail, error: added < docs.length ? error : null };
 }
 
 /* ---------------- sending ---------------- */
