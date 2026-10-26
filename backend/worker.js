@@ -60,28 +60,41 @@ export async function projectQueue() {
 }
 async function buildProjection() {
   const campaigns = await Campaign.find({ status: 'active' }).select('_id').lean();
-  const list = await Enrollment.find({ status: 'active', paused: { $ne: true }, campaign: { $in: campaigns.map((c) => c._id) } })
-    .select('nextSendAt').sort({ nextSendAt: 1 }).lean();
+  const list = (await Enrollment.find({ status: 'active', paused: { $ne: true }, campaign: { $in: campaigns.map((c) => c._id) } })
+    .select('nextSendAt step').lean())
+    .map((e) => ({ id: String(e._id), first: e.step === 0, due: new Date(e.nextSendAt || Date.now()).getTime(), ready: expectedSendAt(e.nextSendAt || new Date()).getTime() }));
   const out = new Map();
   if (!list.length) return out;
+  // same order as the queue: of the emails that are due, first emails go first, then the longest-waiting follow-up
+  const before = (a, b) => (a.first !== b.first ? (a.first ? -1 : 1) : a.due - b.due);
   let cursor = expectedSendAt(new Date()).getTime();
   const today = dayKey(Date.now());
   let dayLeft = config.dailyLimit - (dayKey(cursor) === today ? await sentToday() : 0);
   let hourLeft = config.hourlyLimit - (dayKey(cursor) === today ? await sentLastHour() : 0);
   let hourStart = cursor;
-  for (const e of list) {
-    for (let guard = 0; guard < 400; guard++) {
-      const t = Math.max(cursor, expectedSendAt(e.nextSendAt).getTime());
-      if (dayKey(t) !== dayKey(cursor)) { cursor = t; dayLeft = config.dailyLimit; hourLeft = config.hourlyLimit; hourStart = t; }
-      else if (t > cursor) cursor = t;
-      if (cursor - hourStart >= 3600000) { hourStart = cursor; hourLeft = config.hourlyLimit; }
-      if (dayLeft <= 0) { cursor = nextSendDay(cursor); dayLeft = config.dailyLimit; hourLeft = config.hourlyLimit; hourStart = cursor; continue; }
-      if (hourLeft <= 0) { cursor = expectedSendAt(new Date(hourStart + 3600000)).getTime(); continue; }
-      out.set(String(e._id), new Date(cursor));
-      dayLeft--;
-      hourLeft--;
-      break;
+  let left = list;
+  for (let guard = 0; left.length && guard < 20000; guard++) {
+    if (dayLeft <= 0) { cursor = nextSendDay(cursor); dayLeft = config.dailyLimit; hourLeft = config.hourlyLimit; hourStart = cursor; continue; }
+    if (hourLeft <= 0) {
+      const t = expectedSendAt(new Date(hourStart + 3600000)).getTime();
+      if (dayKey(t) !== dayKey(cursor)) dayLeft = config.dailyLimit;
+      cursor = t; hourStart = t; hourLeft = config.hourlyLimit;
+      continue;
     }
+    let pick = null;
+    for (const e of left) if (e.ready <= cursor && (!pick || before(e, pick) < 0)) pick = e;
+    if (!pick) {
+      // nothing due yet: jump to the next moment something is
+      const t = Math.min(...left.map((e) => e.ready));
+      if (dayKey(t) !== dayKey(cursor)) { dayLeft = config.dailyLimit; hourLeft = config.hourlyLimit; hourStart = t; }
+      cursor = t;
+      continue;
+    }
+    if (cursor - hourStart >= 3600000) { hourStart = cursor; hourLeft = config.hourlyLimit; }
+    out.set(pick.id, new Date(cursor));
+    left = left.filter((e) => e !== pick);
+    dayLeft--;
+    hourLeft--;
   }
   return out;
 }
@@ -353,9 +366,13 @@ export async function runQueue({ force = false } = {}) {
     let left = Math.min(dayLeft, hourLeft);
 
     const campaigns = new Map((await Campaign.find({ status: 'active' })).map((c) => [String(c._id), c]));
-    const due = await Enrollment.find({ status: 'active', paused: { $ne: true }, campaign: { $in: [...campaigns.keys()] }, nextSendAt: { $lte: new Date() } })
-      .sort({ nextSendAt: 1 })
-      .limit(Math.min(left, 200));
+    // Order: first emails of new leads go first (today's upload never waits behind old follow-ups),
+    // then follow-ups - the one waiting longest first.
+    const dueQ = { status: 'active', paused: { $ne: true }, campaign: { $in: [...campaigns.keys()] }, nextSendAt: { $lte: new Date() } };
+    const max = Math.min(left, 200);
+    const firsts = await Enrollment.find({ ...dueQ, step: 0 }).sort({ nextSendAt: 1 }).limit(max);
+    const followUps = firsts.length < max ? await Enrollment.find({ ...dueQ, step: { $gt: 0 } }).sort({ nextSendAt: 1 }).limit(max - firsts.length) : [];
+    const due = [...firsts, ...followUps];
     if (!due.length) return Object.assign(result, { reason: 'nothing due' });
 
     // Check the inbox before any follow-up. If the check fails, hold follow-ups (never risk mailing someone who replied).
