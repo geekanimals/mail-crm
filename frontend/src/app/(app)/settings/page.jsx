@@ -96,7 +96,7 @@ export default function SettingsPage() {
 
         <div className="card">
           <h2>CC on every email</h2>
-          <p className="muted small st-sub">Ye address(es) har email aur follow-up mein CC hote hain. Comma se kai daal sakte ho. Khali = no CC. Default <code>MAIL_CC</code> in .env{s.ccEnv ? ` (${s.ccEnv})` : ''}.</p>
+          <p className="muted small st-sub">These addresses get a copy (CC) of every email and follow-up. Separate several addresses with commas. Leave empty for no CC. The default is <code>MAIL_CC</code> in .env{s.ccEnv ? ` (${s.ccEnv})` : ''}.</p>
           <form className="row" onSubmit={(e) => { e.preventDefault(); call('/api/settings/cc', { cc }, 'CC saved'); }}>
             <input value={cc} onChange={(e) => setCc(e.target.value)} placeholder="mayank@geekcreativeagency.com" className="st-input" />
             <button className="btn sm">Save CC</button>
@@ -107,7 +107,7 @@ export default function SettingsPage() {
 
         <div className="card">
           <h2>Team members</h2>
-          <p className="muted small st-sub">Add, remove and give logins to your team on the <a href="/team" className="st-link">Team page →</a></p>
+          <p className="muted small st-sub">Add, remove and give logins to your team on the <a href="/team" className="st-link">Employees page →</a></p>
         </div>
 
         <div className="card">

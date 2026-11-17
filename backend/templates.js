@@ -1,7 +1,7 @@
-// Fixed follow-up emails (6). The signature below is added to every email automatically. Har person ke liye sirf {{firstName}} aur {{company}} badalte hain.
+// Fixed follow-up emails (6). The signature below is added to every email automatically. Only {{firstName}} and {{company}} change for each person.
 // First email aapki CSV / Excel file se aata hai (subject + body).
-// Har follow-up same thread mein "Re: <first subject>" banke jata hai, pichhle emails niche quote hote hain.
-// Text badalna ho to yahin badlo aur backend restart karo.
+// Every follow-up goes in the same thread as "Re: <first subject>", with the earlier emails quoted below.
+// To change the text, edit it here and restart the backend.
 
 // Signature - added automatically at the end of EVERY email (first email + all follow-ups).
 // If your first email in the file already has "Aanchal Ara", it is not added twice.

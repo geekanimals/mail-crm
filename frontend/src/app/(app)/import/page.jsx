@@ -365,8 +365,8 @@ export default function ImportPage() {
         <div>
           <h1>Import Contacts</h1>
           <p>{mode === 'fresh'
-            ? 'File mein sirf first email likho. Follow-ups fixed hain (sirf naam + company badlega). Reply aate hi aage ka koi mail nahi jayega.'
-            : 'Jinko pehle mail ja chuka hai: status likho (first sent / followup 2 sent …), agla follow-up wahi se jayega.'}</p>
+            ? 'Write only the first email in the file. The follow-ups are fixed (only the name and company change). As soon as someone replies, no further email goes to them.'
+            : 'For people who were already emailed, write their status (first sent / followup 2 sent …) and the next follow-up continues from there.'}</p>
         </div>
         {mode !== 'google' && <button className="btn soft" onClick={sample}><LuDownload /> Download sample</button>}
       </div>

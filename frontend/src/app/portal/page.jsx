@@ -6,6 +6,9 @@ import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
 import { LuCircleCheck, LuLogOut } from 'react-icons/lu';
 import { api, date, getToken, notify, setRole, setToken } from '@/lib/api';
+import { Attendance, Documents, Home, Leaves, PasswordForm, Payslips, Profile, Report, Targets, Tasks, emCss } from './Employee';
+import Shell from './Shell';
+import { openFile } from '@/lib/hr';
 
 const LOGO = process.env.NEXT_PUBLIC_LOGO_ICON_URL || '/fav.png';
 const STAGE = { cold: 'Cold lead', hot: 'Hot lead', opportunity: 'Opportunity', account: 'Account', old_client: 'Old client' };
@@ -14,6 +17,8 @@ export default function PortalPage() {
   const router = useRouter();
   const [data, setData] = useState(null);
   const [showDone, setShowDone] = useState(false);
+  const [tab, setTab] = useState('home');
+  const [pw, setPw] = useState(false); // client: change password box
   const [toast, setToast] = useState(null);
 
   const load = useCallback(() => {
@@ -69,9 +74,60 @@ export default function PortalPage() {
   const hour = new Date().getHours();
   const hello = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
 
+  const isEmployee = me?.role === 'team' && !me.mustChangePassword;
+
+  // employees: sidebar app (desktop) / bottom tabs (phone)
+  if (data && isEmployee) {
+    return (
+      <div className="pt">
+        <style>{css + emCss}</style>
+        <Shell me={me} tab={tab} setTab={setTab} hideAccounts={!data.accounts.length} onLogout={logout}>
+          {tab === 'home' && <Home go={setTab} />}
+          {tab === 'tasks' && <Tasks me={me} />}
+          {tab === 'attendance' && <Attendance />}
+          {tab === 'leaves' && <Leaves />}
+          {tab === 'report' && <Report />}
+          {tab === 'targets' && <Targets />}
+          {tab === 'documents' && <Documents />}
+          {tab === 'payslips' && <Payslips />}
+          {tab === 'profile' && <Profile onPhoto={(photo) => setData((d) => ({ ...d, me: { ...d.me, photo } }))} />}
+          {tab === 'accounts' && (
+            <>
+              <div className="em-row em-between">
+                <p className="pt-muted">{data.accounts.reduce((n, a) => n + a.tasks.filter((t) => !t.done).length, 0)} open task(s) across {data.accounts.length} account(s)</p>
+                <label className="pt-check"><input type="checkbox" checked={showDone} onChange={(e) => setShowDone(e.target.checked)} /> Show done</label>
+              </div>
+              {data.accounts.length === 0 && <div className="pt-card pt-empty">No work assigned to you yet.</div>}
+              {data.accounts.map((a) => {
+                const tasks = a.tasks.filter((t) => showDone || !t.done);
+                return (
+                  <section key={a._id} className="pt-card">
+                    <h2>{a.name} <span className={`pt-stage ${a.stage}`}>{STAGE[a.stage]}</span></h2>
+                    <Team list={a.team} me={me.name} />
+                    <h3 className="pt-sub">My tasks</h3>
+                    {tasks.length === 0 && <p className="pt-muted">{a.tasks.length ? 'All your tasks here are done.' : 'No task for you on this account yet.'}</p>}
+                    {tasks.map((t) => (
+                      <label key={t._id} className={`pt-task ${t.done ? 'done' : ''}`}>
+                        <input type="checkbox" checked={t.done} onChange={() => tick(a._id, t)} />
+                        <span><b>{t.task}</b><small>Updated {date(t.updatedAt)}</small></span>
+                      </label>
+                    ))}
+                    <h3 className="pt-sub">Messages</h3>
+                    <Messages list={a.messages} me={me.name} onSend={(text) => post(a._id, text)} />
+                  </section>
+                );
+              })}
+            </>
+          )}
+        </Shell>
+        {toast && <div className={`pt-toast ${toast.type}`}>{toast.text}</div>}
+      </div>
+    );
+  }
+
   return (
     <div className="pt">
-      <style>{css}</style>
+      <style>{css + emCss}</style>
       <header className="pt-head">
         <div className="pt-brand">
           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -81,54 +137,74 @@ export default function PortalPage() {
             <b>{me ? `${hello}, ${me.name}` : 'Loading…'}</b>
           </div>
         </div>
-        <button className="pt-btn ghost" onClick={logout}><LuLogOut /> Log out</button>
+        <div className="em-row">
+          {me?.role === 'client' && <button className="pt-btn ghost" onClick={() => setPw(!pw)}>Change password</button>}
+          <button className="pt-btn ghost" onClick={logout}><LuLogOut /> Log out</button>
+        </div>
       </header>
 
       <main className="pt-main">
         {!data ? (
           <p className="pt-muted">Loading…</p>
-        ) : me.role === 'team' ? (
-          <>
-            <div className="pt-title">
-              <div>
-                <h1>My work</h1>
-                <p className="pt-muted">{data.accounts.reduce((n, a) => n + a.tasks.filter((t) => !t.done).length, 0)} open task(s) across {data.accounts.length} account(s)</p>
-              </div>
-              <label className="pt-check"><input type="checkbox" checked={showDone} onChange={(e) => setShowDone(e.target.checked)} /> Show done</label>
-            </div>
-            {data.accounts.length === 0 && <div className="pt-card pt-empty">No work assigned to you yet.</div>}
-            {data.accounts.map((a) => {
-              const tasks = a.tasks.filter((t) => showDone || !t.done);
-              return (
-                <section key={a._id} className="pt-card">
-                  <h2>{a.name} <span className={`pt-stage ${a.stage}`}>{STAGE[a.stage]}</span></h2>
-                  <Team list={a.team} me={me.name} />
-                  <h3 className="pt-sub">My tasks</h3>
-                  {tasks.length === 0 && <p className="pt-muted">{a.tasks.length ? 'All your tasks here are done.' : 'No task for you on this account yet.'}</p>}
-                  {tasks.map((t) => (
-                    <label key={t._id} className={`pt-task ${t.done ? 'done' : ''}`}>
-                      <input type="checkbox" checked={t.done} onChange={() => tick(a._id, t)} />
-                      <span><b>{t.task}</b><small>Updated {date(t.updatedAt)}</small></span>
-                    </label>
-                  ))}
-                  <h3 className="pt-sub">Messages</h3>
-                  <Messages list={a.messages} me={me.name} onSend={(text) => post(a._id, text)} />
-                </section>
-              );
-            })}
-          </>
-        ) : !data.account ? (
+        ) : me.mustChangePassword ? (
+          <section className="pt-card">
+            <h2>Welcome, {me.name}! Please set your own password</h2>
+            <p className="pt-muted">For your safety, choose a new password before you start. Only you will know it.</p>
+            <PasswordForm first onDone={load} />
+          </section>
+        ) : null}
+        {data && !me.mustChangePassword && me.role === 'client' && pw && (
+          <section className="pt-card"><h2>Change password</h2><PasswordForm onDone={() => setPw(false)} /></section>
+        )}
+        {data && !me.mustChangePassword && me.role === 'client' && (!data.account ? (
           <div className="pt-card pt-empty">Your account is being set up. Please check back soon.</div>
         ) : (
-          <ClientView account={data.account} me={me.name} onSend={(text) => post(data.account._id, text)} />
-        )}
+          <ClientView account={data.account} project={data.project} me={me.name} onSend={(text) => post(data.account._id, text)} />
+        ))}
       </main>
       {toast && <div className={`pt-toast ${toast.type}`}>{toast.text}</div>}
     </div>
   );
 }
 
-function ClientView({ account, me, onSend }) {
+const DOC = { estimate: 'Estimate', invoice_advance: 'Advance invoice', invoice_final: 'Invoice', report: 'Report', contract: 'Contract', po: 'Purchase order', other: 'Document' };
+function Project({ p }) {
+  const cur = p.steps.findIndex((s) => s.key === p.step);
+  return (
+    <>
+      <section className="pt-card">
+        <h2>Project progress</h2>
+        <ol className="pt-steps">
+          {p.steps.map((s, i) => (
+            <li key={s.key} className={p.step === 'complete' || i < cur ? 'done' : i === cur ? 'now' : ''}><span>{p.step === 'complete' || i < cur ? '✓' : i + 1}</span>{s.label}</li>
+          ))}
+        </ol>
+        {p.deliverables.length > 0 && (
+          <>
+            <h3 className="pt-sub">Deliverables ({p.deliverables.filter((d) => d.done).length}/{p.deliverables.length})</h3>
+            {p.deliverables.map((d) => <div key={d._id} className={`pt-task ro ${d.done ? 'done' : ''}`}>{d.done ? <LuCircleCheck className="pt-ok" /> : <span className="pt-dot" />}<span><b>{d.text}</b></span></div>)}
+          </>
+        )}
+      </section>
+      {p.documents.length > 0 && (
+        <section className="pt-card">
+          <h2>Documents from Geek</h2>
+          {[...p.documents].reverse().map((d) => (
+            <div key={d._id} className="pt-doc">
+              <span><b>{DOC[d.kind] || 'Document'}{d.number ? ` · ${d.number}` : ''}</b><small>{d.amount ? `₹${new Intl.NumberFormat('en-IN').format(d.amount)} · ` : ''}{date(d.at)}</small></span>
+              <span className="em-row">
+                {d.file && <button className="pt-btn" onClick={() => openFile(d.file)}>Download</button>}
+                {d.link && <a className="pt-btn" href={d.link} target="_blank" rel="noopener noreferrer">Open link</a>}
+              </span>
+            </div>
+          ))}
+        </section>
+      )}
+    </>
+  );
+}
+
+function ClientView({ account, project, me, onSend }) {
   const total = account.tasks.length;
   const done = account.tasks.filter((t) => t.done).length;
   const pct = total ? Math.round((done / total) * 100) : 0;
@@ -140,6 +216,9 @@ function ClientView({ account, me, onSend }) {
           <p className="pt-muted">What the Geek team is working on for you</p>
         </div>
       </div>
+      {project && <Project p={project} />}
+      {(total > 0 || !project) && (
+        <>
       <section className="pt-card">
         <div className="pt-progress">
           <div><b>{pct}%</b><span>{done} of {total} done</span></div>
@@ -157,6 +236,8 @@ function ClientView({ account, me, onSend }) {
           <div key={t._id} className="pt-task ro done"><LuCircleCheck className="pt-ok" /><span><b>{t.task}</b><small>{t.member} · {date(t.updatedAt)}</small></span></div>
         ))}
       </section>
+        </>
+      )}
       {account.team.length > 0 && (
         <section className="pt-card">
           <h2>Your Geek team</h2>
@@ -215,7 +296,7 @@ const css = `
 .pt-brand img { width: 42px; height: 42px; border-radius: 12px; background: #fff; box-shadow: 0 8px 18px rgba(50,193,223,.25); }
 .pt-brand small { display: block; font-size: 12px; color: #64748b; }
 .pt-brand b { font-size: 17px; }
-.pt-btn { display: inline-flex; align-items: center; gap: 6px; border: 1px solid rgba(50,193,223,.3); background: #fff; color: #0b87a5; padding: 8px 14px; border-radius: 12px; font: inherit; font-weight: 600; cursor: pointer; }
+.pt-btn { display: inline-flex; align-items: center; gap: 6px; border: 1px solid rgba(50,193,223,.3); background: #fff; color: #0b87a5; padding: 8px 14px; border-radius: 12px; font: inherit; font-weight: 600; cursor: pointer; white-space: nowrap; }
 .pt-btn:hover { background: #effafc; }
 .pt-main { max-width: 900px; margin: 0 auto; padding: 32px; display: flex; flex-direction: column; gap: 16px; }
 .pt-title { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
@@ -227,6 +308,14 @@ const css = `
 .pt-empty { text-align: center; color: #64748b; padding: 40px; }
 .pt-stage { font-size: 11.5px; font-weight: 600; padding: 2px 9px; border-radius: 99px; background: #f1f5f9; color: #475569; }
 .pt-stage.account { background: #dcfce7; color: #15803d; }
+.pt-steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.pt-steps li { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #94a3b8; }
+.pt-steps li span { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; background: #e2e8f0; color: #64748b; font-size: 12px; font-weight: 700; flex: none; }
+.pt-steps li.done { color: #15803d; } .pt-steps li.done span { background: #22c55e; color: #fff; }
+.pt-steps li.now { color: #0b87a5; font-weight: 600; } .pt-steps li.now span { background: #1aa9c8; color: #fff; }
+.pt-doc { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 0; border-bottom: 1px dashed rgba(148,163,184,.3); }
+.pt-doc small { display: block; color: #64748b; font-size: 12px; }
+@media (max-width: 640px) { .pt-steps { grid-template-columns: 1fr 1fr; } }
 .pt-stage.opportunity { background: #fef9c3; color: #a16207; }
 .pt-stage.hot { background: #fff1e6; color: #c2410c; }
 .pt-task { display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; border-radius: 14px; background: #fff; border: 1px solid rgba(148,163,184,.2); cursor: pointer; font-size: 14px; }

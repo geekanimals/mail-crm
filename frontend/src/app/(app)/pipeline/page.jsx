@@ -132,6 +132,7 @@ function CompanyPanel({ id, onClose, convertFirst }) {
   const [task, setTask] = useState({ member: '', task: '' });
   const [conv, setConv] = useState(null); // convert-to-account / client login form
   const [shared, setShared] = useState(null); // login details to give the client (shown once)
+  const [busy, setBusy] = useState(false); // converting / saving the login (Bounty can take a few seconds)
 
   const load = useCallback(() => {
     api(`/api/companies/${id}`)
@@ -160,27 +161,34 @@ function CompanyPanel({ id, onClose, convertFirst }) {
 
   const convert = async (e) => {
     e.preventDefault();
+    if (busy) return;
+    setBusy(true);
     try {
       const r = await api(`/api/companies/${id}/convert`, { method: 'POST', body: conv.email ? conv : {} });
       notify(`${r.company.name} is now an account`);
-      if (r.clientLogin) setShared({ email: r.clientLogin.email, password: conv.password });
+      if (r.clientLogin?.password) setShared({ email: r.clientLogin.email, password: r.clientLogin.password, bounty: r.clientLogin.bounty });
       setConv(null);
       load();
     } catch (err) {
       notify(err.message, 'error');
     }
+    setBusy(false);
   };
   const saveLogin = async (e) => {
     e.preventDefault();
+    if (busy) return;
+    setBusy(true);
     try {
-      const u = await api(`/api/companies/${id}/client-login`, { method: 'PUT', body: conv });
-      if (conv.password) setShared({ email: u.email, password: conv.password });
+      const body = d.bounty && d.clientLogin?.bounty ? { name: conv.name, email: conv.email, reset: Boolean(conv.reset) } : d.bounty && !d.clientLogin ? { name: conv.name, email: conv.email } : conv;
+      const u = await api(`/api/companies/${id}/client-login`, { method: 'PUT', body });
+      if (u.password) setShared({ email: u.email, password: u.password, bounty: u.bounty });
       notify('Client login saved');
       setConv(null);
       load();
     } catch (err) {
       notify(err.message, 'error');
     }
+    setBusy(false);
   };
 
   if (!d || !info) return <div className="pl-overlay"><div className="pl-panel"><p className="muted">Loading…</p></div></div>;
@@ -198,6 +206,7 @@ function CompanyPanel({ id, onClose, convertFirst }) {
         {shared && (
           <div className="pl-shared">
             <b>Client login — share this with the client (password is shown only now)</b>
+            {shared.bounty && <span className="small">The same email and password also open their Bounty brand account.</span>}
             <div className="pl-cred"><span>Website</span><code>{window.location.origin}/login</code><span>Email</span><code>{shared.email}</code><span>Password</span><code>{shared.password}</code></div>
             <div className="row">
               <button className="btn soft sm" onClick={() => copy(`Geek CRM - your account\n${window.location.origin}/login\nEmail: ${shared.email}\nPassword: ${shared.password}`)}><LuCopy /> Copy</button>
@@ -216,11 +225,16 @@ function CompanyPanel({ id, onClose, convertFirst }) {
               <div className="pl-grid">
                 <label className="field">Client name<input value={conv.name} onChange={(e) => setConv({ ...conv, name: e.target.value })} /></label>
                 <label className="field">Login email<input type="email" value={conv.email} onChange={(e) => setConv({ ...conv, email: e.target.value })} placeholder="client@brand.com" /></label>
-                <label className="field pl-wide">Password
-                  <span className="pl-inputlink"><input minLength={8} value={conv.password} onChange={(e) => setConv({ ...conv, password: e.target.value })} /><button type="button" className="btn ghost sm" onClick={() => setConv({ ...conv, password: makePassword() })}>New</button></span>
-                </label>
+                {d.bounty ? (
+                  <p className="small muted pl-wide">The login is made on Bounty too, with the same email. Bounty creates the password; you will see it once after converting.</p>
+                ) : (
+                  <label className="field pl-wide">Password
+                    <span className="pl-inputlink"><input minLength={8} value={conv.password} onChange={(e) => setConv({ ...conv, password: e.target.value })} /><button type="button" className="btn ghost sm" onClick={() => setConv({ ...conv, password: makePassword() })}>New</button></span>
+                  </label>
+                )}
               </div>
-              <div className="row"><button className="btn sm"><LuHandshake /> Convert to account</button><button type="button" className="btn ghost sm" onClick={() => setConv(null)}>Cancel</button></div>
+              <p className="small muted">Converting gives the estimate task to its owner (see Deals → Step owners).</p>
+              <div className="row"><button className="btn sm" disabled={busy}><LuHandshake /> {busy ? 'Converting…' : 'Convert to account'}</button><button type="button" className="btn ghost sm" onClick={() => setConv(null)}>Cancel</button></div>
             </form>
           ) : (
             <button className="btn pl-convertbtn" onClick={() => setConv({ name: d.contacts[0]?.name || c.name, email: d.contacts.find((p) => p.email)?.email || '', password: makePassword() })}><LuHandshake /> Convert to account</button>
@@ -232,16 +246,20 @@ function CompanyPanel({ id, onClose, convertFirst }) {
               <form className="pl-grid" onSubmit={saveLogin}>
                 <label className="field">Client name<input value={conv.name} onChange={(e) => setConv({ ...conv, name: e.target.value })} /></label>
                 <label className="field">Login email<input type="email" required value={conv.email} onChange={(e) => setConv({ ...conv, email: e.target.value })} /></label>
-                <label className="field pl-wide">{d.clientLogin ? 'New password (empty = keep the old one)' : 'Password'}
-                  <span className="pl-inputlink"><input minLength={8} required={!d.clientLogin} value={conv.password} onChange={(e) => setConv({ ...conv, password: e.target.value })} /><button type="button" className="btn ghost sm" onClick={() => setConv({ ...conv, password: makePassword() })}>New</button></span>
-                </label>
-                <div className="row pl-wide"><button className="btn sm">Save login</button><button type="button" className="btn ghost sm" onClick={() => setConv(null)}>Cancel</button></div>
+                {d.bounty && (!d.clientLogin || d.clientLogin.bounty) ? (
+                  <p className="small muted pl-wide">{d.clientLogin ? (conv.reset ? 'Bounty will create a new password (shown once).' : 'Name only. Use "Reset password" for a new password.') : 'Made on Bounty too; Bounty creates the password (shown once).'}</p>
+                ) : (
+                  <label className="field pl-wide">{d.clientLogin ? 'New password (empty = keep the old one)' : 'Password'}
+                    <span className="pl-inputlink"><input minLength={8} required={!d.clientLogin} value={conv.password} onChange={(e) => setConv({ ...conv, password: e.target.value })} /><button type="button" className="btn ghost sm" onClick={() => setConv({ ...conv, password: makePassword() })}>New</button></span>
+                  </label>
+                )}
+                <div className="row pl-wide"><button className="btn sm" disabled={busy}>{busy ? 'Saving…' : 'Save login'}</button><button type="button" className="btn ghost sm" onClick={() => setConv(null)}>Cancel</button></div>
               </form>
             ) : d.clientLogin ? (
               <div className="row pl-loginrow">
                 <span>{d.clientLogin.email} · {d.clientLogin.lastLoginAt ? `last login ${date(d.clientLogin.lastLoginAt)}` : 'never logged in'}</span>
                 <span className="row">
-                  <button className="btn ghost sm" onClick={() => setConv({ name: d.clientLogin.name, email: d.clientLogin.email, password: makePassword() })}>Reset password</button>
+                  <button className="btn ghost sm" onClick={() => setConv({ name: d.clientLogin.name, email: d.clientLogin.email, password: makePassword(), reset: true })}>Reset password</button>
                   <button className="btn ghost sm pl-danger" onClick={() => window.confirm('Remove the client login? They will not be able to log in.') && call('/client-login', 'DELETE', undefined, 'Client login removed')}>Remove login</button>
                 </span>
               </div>
@@ -301,6 +319,7 @@ function CompanyPanel({ id, onClose, convertFirst }) {
 
         {['account', 'old_client'].includes(c.stage) ? (
           <>
+            {d.deal && <Link className="btn soft sm pl-addbtn" href={`/deals?open=${d.deal._id}`}>Open deal (estimate → payment → posts) →</Link>}
             <h3>Team on this account <Link href="/team" className="pl-teamlink">Manage team →</Link></h3>
             <div className="pl-chips">
               {(c.team || []).length === 0 && <span className="muted small">Nobody yet — add the people who will work on {c.name}.</span>}

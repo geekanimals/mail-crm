@@ -17,6 +17,11 @@ import campaignRoutes from './routes/campaigns.js';
 import dashboardRoutes from './routes/dashboard.js';
 import publicRoutes from './routes/public.js';
 import companyRoutes from './routes/companies.js';
+import hrRoutes from './routes/hr.js';
+import meRoutes from './routes/me.js';
+import fileRoutes from './routes/files.js';
+import dealRoutes from './routes/deals.js';
+import newsletterRoutes from './routes/newsletter.js';
 import { Company, Contact, Notification, Reply, getSetting, setSetting } from './models.js';
 import { syncPipeline } from './worker.js';
 
@@ -52,16 +57,21 @@ app.use('/api', (req, _res, next) => (clean(req.body), next()));
 
 // stricter limits for heavy / email-sending actions
 const heavyWrites = (req, res, next) => (req.method === 'GET' ? next() : heavyLimit(req, res, next)); // checking progress is not limited
-app.use(['/api/contacts/import', '/api/contacts/import-continue', '/api/companies/import/google', '/api/settings/run', '/api/settings/test-smtp', '/api/replies/check', '/api/campaigns/:id/start'], heavyWrites);
+app.use(['/api/files', '/api/contacts/import', '/api/contacts/import-continue', '/api/companies/import/google', '/api/settings/run', '/api/settings/test-smtp', '/api/replies/check', '/api/campaigns/:id/start'], heavyWrites);
 app.use('/api/settings/test-email', testEmailLimit);
 
 app.use('/api/auth', authRoutes);
 app.use('/api/portal', requireAuth, portalRoutes); // team members + clients
+app.use('/api/me', requireAuth, meRoutes); // employee portal (team members)
+app.use('/api/files', requireAuth, fileRoutes); // HR files: the admin, or the employee they belong to
+app.use('/api/deals', requireAuth, dealRoutes); // client work after an account: admin + the employees on it
 const admin = [requireAuth, requireAdmin]; // everything else: admin only
 app.use('/api/contacts', ...admin, contactRoutes);
 app.use('/api/campaigns', ...admin, campaignRoutes);
 app.use('/api/companies', ...admin, companyRoutes);
 app.use('/api/team', ...admin, teamRoutes);
+app.use('/api/hr', ...admin, hrRoutes);
+app.use('/api/newsletter', ...admin, newsletterRoutes);
 app.use('/api', ...admin, dashboardRoutes);
 
 app.use((_req, res) => res.status(404).json({ error: 'Not found' }));
@@ -69,7 +79,7 @@ app.use((_req, res) => res.status(404).json({ error: 'Not found' }));
 app.use((err, _req, res, _next) => {
   let status = err.status || (err.name === 'ValidationError' || err.name === 'CastError' ? 400 : err.code === 11000 ? 409 : 500);
   if (status >= 500) console.error(err);
-  res.status(status).json({ error: status >= 500 && config.isProd ? 'Server error' : err.message });
+  res.status(status).json({ error: status >= 500 && config.isProd ? 'Server error' : err.message, ...(status < 500 && err.extra ? err.extra : {}) });
 });
 
 // database fixes (safe to run every start). Each step runs on its own, so one problem never blocks the rest.

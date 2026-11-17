@@ -5,7 +5,8 @@ import { Router } from 'express';
 import jwt from 'jsonwebtoken';
 import { loginLimit } from '../limits.js';
 import { config } from '../config.js';
-import { User, checkPassword } from '../models.js';
+import { User, checkPassword, hashPassword } from '../models.js';
+import { bountyChangePassword, bountySignIn } from '../bounty.js';
 
 const router = Router();
 const same = (a, b) => crypto.timingSafeEqual(crypto.createHash('sha256').update(String(a)).digest(), crypto.createHash('sha256').update(String(b)).digest());
@@ -20,11 +21,16 @@ router.post('/login', loginLimit, async (req, res, next) => {
       return res.json({ token: sign({ sub: config.adminUser, role: 'admin' }), user: config.adminUser, role: 'admin' });
     }
     const user = username.includes('@') ? await User.findOne({ email: username.toLowerCase() }) : null;
-    const ok = checkPassword(password, user?.passwordHash || DUMMY); // always check, so timing gives nothing away
+    let ok = checkPassword(password, user?.passwordHash || DUMMY); // always check, so timing gives nothing away
+    // a client whose login is synced with Bounty may have changed the password there: accept it and keep both in step
+    if (!ok && user?.active && user.role === 'client' && user.bountyMemberId && password && (await bountySignIn(user.email, password).catch(() => null))) {
+      user.passwordHash = hashPassword(password);
+      ok = true;
+    }
     if (!user || !ok || !user.active) return res.status(401).json({ error: 'Invalid ID or password' });
     user.lastLoginAt = new Date();
     await user.save();
-    res.json({ token: sign({ sub: String(user._id), role: user.role }), user: user.name, role: user.role });
+    res.json({ token: sign({ sub: String(user._id), role: user.role }), user: user.name, role: user.role, mustChangePassword: Boolean(user.mustChangePassword) });
   } catch (e) {
     next(e);
   }
@@ -58,6 +64,26 @@ export function requireAdmin(req, res, next) {
   next();
 }
 
-router.get('/me', requireAuth, (req, res) => res.json({ user: req.user, role: req.role, email: req.account?.email }));
+router.get('/me', requireAuth, (req, res) => res.json({ user: req.user, role: req.role, email: req.account?.email, mustChangePassword: Boolean(req.account?.mustChangePassword) }));
+
+// team members and clients change their own password (the admin password stays in .env)
+router.post('/password', loginLimit.slice(0, 1), requireAuth, async (req, res, next) => {
+  try {
+    if (req.role === 'admin') return res.status(400).json({ error: 'The admin password is set on the server (.env)' });
+    const user = await User.findById(req.account._id);
+    if (!checkPassword(String(req.body?.current || ''), user.passwordHash)) return res.status(400).json({ error: 'Current password is wrong' });
+    const pw = String(req.body?.password || '');
+    if (pw.length < 8) return res.status(400).json({ error: 'New password must be at least 8 characters' });
+    if (pw === String(req.body?.current || '')) return res.status(400).json({ error: 'Choose a password different from the current one' });
+    // the same login on Bounty changes too (clients only)
+    const bounty = user.role === 'client' && user.bountyMemberId ? await bountyChangePassword(user.email, String(req.body?.current || ''), pw).catch(() => false) : null;
+    user.passwordHash = hashPassword(pw);
+    user.mustChangePassword = false;
+    await user.save();
+    res.json({ ok: true, bounty });
+  } catch (e) {
+    next(e);
+  }
+});
 
 export default router;

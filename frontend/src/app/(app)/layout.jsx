@@ -4,7 +4,7 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
-import { LuBan, LuBell, LuCheck, LuFileSpreadsheet, LuKanban, LuLayoutDashboard, LuLogOut, LuMenu, LuReply, LuSend, LuSettings, LuUserCog, LuUsers, LuX } from 'react-icons/lu';
+import { LuBan, LuBell, LuBriefcase, LuCheck, LuFileSpreadsheet, LuKanban, LuNewspaper, LuLayoutDashboard, LuLogOut, LuMenu, LuReply, LuSend, LuSettings, LuUserCog, LuUsers, LuX } from 'react-icons/lu';
 import { api, getToken, setRole, setToken } from '@/lib/api';
 
 const ICON = process.env.NEXT_PUBLIC_LOGO_ICON_URL || '/fav.png'; // square logo (always shown)
@@ -13,10 +13,12 @@ const MENU = [
   ['/', 'Dashboard', LuLayoutDashboard],
   ['/contacts', 'Contacts', LuUsers],
   ['/pipeline', 'Pipeline', LuKanban],
-  ['/team', 'Team', LuUserCog],
+  ['/deals', 'Deals', LuBriefcase],
+  ['/team', 'Employees', LuUserCog],
   ['/import', 'Import', LuFileSpreadsheet],
   ['/campaigns', 'Campaigns', LuSend],
   ['/replies', 'Replies', LuReply],
+  ['/newsletter', 'Newsletter', LuNewspaper],
   ['/settings', 'Settings', LuSettings],
 ];
 
@@ -252,7 +254,10 @@ const css = `
   --side: 72px;
   --side-open: 220px;
 }
-body { background: #f3fbfd; color: var(--text); }
+body { background: #f3fbfd; color: var(--text); overflow-x: clip; }
+/* one long word or link (an email, a URL) must never push the page sideways */
+.card { min-width: 0; overflow-wrap: break-word; }
+.content > * { min-width: 0; max-width: 100%; }
 .loading { min-height: 100vh; display: grid; place-items: center; }
 .spinner { width: 34px; height: 34px; border-radius: 50%; border: 3px solid var(--c-100); border-top-color: var(--c); animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }

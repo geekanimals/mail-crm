@@ -3,6 +3,7 @@
 //  client -> their own account: progress of the work the team is doing for them
 import { Router } from 'express';
 import { Company } from '../models.js';
+import { DEAL_STEPS, Deal, STEP } from '../lifecycle.js';
 import { ah, checkId, fail, str } from '../utils.js';
 
 const router = Router();
@@ -10,7 +11,7 @@ const router = Router();
 router.get(
   '/',
   ah(async (req, res) => {
-    const me = { name: req.user, role: req.role, email: req.account?.email, title: req.account?.title };
+    const me = { _id: req.account?._id, name: req.user, role: req.role, email: req.account?.email, title: req.account?.title, mustChangePassword: Boolean(req.account?.mustChangePassword), photo: req.account?.photo || '' };
     if (req.role === 'team') {
       const list = await Company.find({ stage: { $in: ['account', 'old_client'] }, $or: [{ team: req.user }, { 'tasks.member': req.user }] }).select('name stage tasks team messages').lean();
       const accounts = list
@@ -21,8 +22,19 @@ router.get(
     if (req.role === 'client') {
       const c = await Company.findById(req.account.companyId).select('name stage tasks website team messages').lean();
       if (!c) return res.json({ me, account: null });
+      // the project: which step it is at, and the documents sent to the client (estimate, invoices, report)
+      const deal = await Deal.findOne({ company: c._id }).sort({ createdAt: -1 }).lean();
+      const project = deal && {
+        _id: deal._id,
+        step: deal.step,
+        steps: DEAL_STEPS.map((k) => ({ key: k, label: STEP[k].label })),
+        documents: deal.documents.filter((d) => d.emailedAt).map((d) => ({ _id: d._id, kind: d.kind, name: d.name, number: d.number, amount: d.amount, file: d.file?.id ? d.file : null, link: d.link, at: d.emailedAt })),
+        deliverables: deal.deliverables.map((d) => ({ _id: d._id, text: d.text, done: d.done })),
+        report: deal.step === 'estimate' ? null : deal.report?.text ? deal.report : null,
+      };
       return res.json({
         me,
+        project,
         account: { _id: c._id, name: c.name, stage: c.stage, website: c.website, team: c.team || [], messages: (c.messages || []).slice(-100), tasks: c.tasks.map((t) => ({ _id: t._id, member: t.member, task: t.task, done: t.done, updatedAt: t.updatedAt })) },
       });
     }

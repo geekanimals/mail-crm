@@ -4,6 +4,9 @@ import crypto from 'node:crypto';
 import { Router } from 'express';
 import { Company, Contact, EmailLog, STAGES, Suppression, User, companyKey, hashPassword, upsertCompany } from '../models.js';
 import { strongEnough } from './team.js';
+import { bountyBrand, bountyBrandLogin, bountyReady, bountyResetLogin } from '../bounty.js';
+import { Deal, startDeal } from '../lifecycle.js';
+import { stageChanged } from '../models.js';
 import { mapColumns, parseAccounts, parseCSV, parseOpportunity, rowToLead, saveLead, statusFromSheet } from '../sheets.js';
 import { ah, checkId, fail, str, validEmail } from '../utils.js';
 
@@ -96,7 +99,9 @@ router.get(
     const login = await User.findOne({ role: 'client', companyId: id }).lean();
     res.json({
       company,
-      clientLogin: login ? { _id: login._id, name: login.name, email: login.email, active: login.active, lastLoginAt: login.lastLoginAt } : null,
+      clientLogin: login ? { _id: login._id, name: login.name, email: login.email, active: login.active, lastLoginAt: login.lastLoginAt, bounty: Boolean(login.bountyMemberId) } : null,
+      bounty: bountyReady(), // client logins are made on Bounty too (same email + password)
+      deal: (await Deal.findOne({ company: id }).sort({ createdAt: -1 }).select('_id step').lean()) || null,
       contacts: contacts.map((c) => ({ ...c, unsubscribeToken: undefined, sent: sent.get(String(c._id))?.n || 0, lastSentAt: sent.get(String(c._id))?.at || c.lastContactedAt })),
       team: await getTeam(),
     });
@@ -123,6 +128,7 @@ router.put(
       const wasAccount = c.tasks?.length || c.team?.length || c.messages?.length || (await User.exists({ role: 'client', companyId: c._id }));
       if (!wasAccount) throw fail(400, 'Only an Opportunity can become an account (use "Convert to account")');
     }
+    const fromStage = c.stage;
     Object.assign(c, details(req.body));
     const name = str(req.body?.name, 200);
     if (name && name !== c.name) {
@@ -133,6 +139,7 @@ router.put(
       await Contact.updateMany({ companyId: c._id }, { $set: { company: name } });
     }
     await c.save();
+    await stageChanged(c, fromStage, c.stage); // tasks for the new stage (meeting, contract, deal)
     res.json(c);
   })
 );
@@ -143,28 +150,53 @@ router.delete(
     const id = checkId(req.params.id);
     await Contact.updateMany({ companyId: id }, { $unset: { companyId: 1 } }); // people stay in Contacts
     await User.deleteMany({ role: 'client', companyId: id }); // the client's login goes with the company
+    // its deals, client tasks and deal files go too
+    const { HrTask, HrFile } = await import('../hr-models.js');
+    const { removeFile } = await import('./files.js');
+    const deals = await Deal.find({ company: id }).select('_id').lean();
+    for (const f of await HrFile.find({ owner: { $in: deals.map((d) => d._id) } }).select('_id').lean()) await removeFile(String(f._id));
+    await HrTask.deleteMany({ company: id });
+    await Deal.deleteMany({ company: id });
     await Company.deleteOne({ _id: id });
     res.json({ ok: true });
   })
 );
 
 /* ---------- convert to account + the client's login (email + password made by the admin) ---------- */
+// With Bounty set up (.env), a new client login is made on Bounty first (Bounty creates the password) and the CRM
+// login gets the same email + password. Without Bounty, the admin's password is used. Returns { user, password }.
 async function saveClientLogin(company, body) {
   const email = validEmail(body?.email);
   if (!email) throw fail(400, 'Enter a valid email for the client login');
   let u = await User.findOne({ role: 'client', companyId: company._id });
   const other = await User.findOne({ email });
   if (other && String(other._id) !== String(u?._id)) throw fail(409, 'This email already has a login');
+  const name = str(body?.name, 80) || company.name;
+  let password = null;
   if (!u) {
-    u = new User({ role: 'client', companyId: company._id, email, name: str(body?.name, 80) || company.name, passwordHash: hashPassword(strongEnough(body?.password)) });
+    if (bountyReady()) {
+      const brand = await bountyBrand({ name: company.name, website: company.website });
+      const made = await bountyBrandLogin({ brandId: brand.brandId, email, name });
+      password = made.password;
+      u = new User({ role: 'client', companyId: company._id, email, name, passwordHash: hashPassword(password), bountyBrandId: brand.brandId, bountyMemberId: made.memberId || '' });
+    } else {
+      password = strongEnough(body?.password);
+      u = new User({ role: 'client', companyId: company._id, email, name, passwordHash: hashPassword(password) });
+    }
   } else {
+    if (u.bountyMemberId && email !== u.email) throw fail(400, 'This login is synced with Bounty, so its email cannot be changed here. Delete it and make a new one.');
     u.email = email;
     if (str(body?.name, 80)) u.name = str(body.name, 80);
-    if (body?.password) u.passwordHash = hashPassword(strongEnough(body.password));
+    if (body?.password || body?.reset) {
+      if (u.bountyMemberId && bountyReady()) {
+        password = (await bountyResetLogin({ brandId: u.bountyBrandId, memberId: u.bountyMemberId })).password;
+      } else password = strongEnough(body.password);
+      u.passwordHash = hashPassword(password);
+    }
     if (body?.active !== undefined) u.active = body.active === true;
   }
   await u.save();
-  return u;
+  return { user: u, password, bounty: Boolean(u.bountyMemberId) };
 }
 
 router.post(
@@ -176,7 +208,9 @@ router.post(
     const login = req.body?.email ? await saveClientLogin(c, req.body) : null; // login is optional
     c.stage = 'account';
     await c.save();
-    res.json({ company: c, clientLogin: login });
+    const contract = req.body?.contract?.id ? req.body.contract : null;
+    const deal = await startDeal(c, { by: req.user, contract }); // Aanchal gets the estimate task
+    res.json({ company: c, clientLogin: login && { ...login.user.toJSON(), password: login.password, bounty: login.bounty }, deal: deal._id });
   })
 );
 
@@ -185,7 +219,8 @@ router.put(
   ah(async (req, res) => {
     const c = await Company.findById(checkId(req.params.id));
     if (!c) throw fail(404, 'Company not found');
-    res.json(await saveClientLogin(c, req.body));
+    const login = await saveClientLogin(c, req.body);
+    res.json({ ...login.user.toJSON(), password: login.password, bounty: login.bounty });
   })
 );
 

@@ -27,7 +27,7 @@ export async function api(path, { method = 'GET', body, query } = {}) {
     setToken(null);
     window.location.replace('/login');
   }
-  if (!res.ok) throw new Error(data?.error || `Error ${res.status}`);
+  if (!res.ok) throw Object.assign(new Error(data?.error || `Error ${res.status}`), { status: res.status, data });
   return data;
 }
 

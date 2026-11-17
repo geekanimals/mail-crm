@@ -36,6 +36,8 @@ const contactSchema = new Schema(
     unsubscribeToken: { type: String, unique: true, default: () => crypto.randomBytes(24).toString('hex') },
     lastContactedAt: Date,
     repliedAt: Date,
+    newsletter: { type: Boolean, default: false, index: true }, // finished the sequence with no reply -> newsletter list
+    newsletterAt: Date,
   },
   {
     timestamps: true,
@@ -85,9 +87,42 @@ export const User = model(
       role: { type: String, enum: ['team', 'client'], required: true, index: true },
       title: { type: String, default: '' }, // e.g. "Account manager" (team) or the client's designation
       companyId: { type: id, ref: 'Company', index: true }, // clients: their account
+      bountyBrandId: { type: String, default: '' }, // clients: the same login on Bounty (Geek OS)
+      bountyMemberId: { type: String, default: '' },
       passwordHash: { type: String, required: true },
       active: { type: Boolean, default: true },
       lastLoginAt: Date,
+      mustChangePassword: { type: Boolean, default: false },
+      photo: { type: String, default: '' }, // profile photo: id of an HrFile (image)
+      // ---- employee (HR) details - team members only, filled by the admin ----
+      employee: {
+        code: { type: String, default: '' }, // employee ID, e.g. GEEK-001
+        department: { type: String, default: '' },
+        phone: { type: String, default: '' },
+        personalEmail: { type: String, default: '' },
+        dob: { type: String, default: '' }, // YYYY-MM-DD
+        gender: { type: String, default: '' },
+        address: { type: String, default: '' },
+        joiningDate: { type: String, default: '' }, // YYYY-MM-DD - paid leave counts from here
+        emergencyName: { type: String, default: '' },
+        emergencyPhone: { type: String, default: '' },
+        pan: { type: String, default: '' },
+        bankName: { type: String, default: '' },
+        bankAccount: { type: String, default: '' },
+        ifsc: { type: String, default: '' },
+        notes: { type: String, default: '' },
+      },
+      // monthly salary (in rupees) - deductions PT and TDS are entered by the admin
+      salary: {
+        basic: { type: Number, default: 0 },
+        hra: { type: Number, default: 0 },
+        allowances: { type: Number, default: 0 },
+        pt: { type: Number, default: 0 },
+        tds: { type: Number, default: 0 },
+        otherDeductions: { type: Number, default: 0 },
+      },
+      // job history: joined, promoted, salary changed ...
+      history: [{ date: String, text: String }],
     },
     { timestamps: true, toJSON: { transform: (_d, r) => (delete r.passwordHash, delete r.__v, r) } }
   )
@@ -104,13 +139,22 @@ export function checkPassword(pw, stored) {
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
+/** Code that runs when a company changes stage (the lifecycle hands out tasks from here). fn(company, from, to) */
+export const onStageChange = [];
+export async function stageChanged(company, from, to) {
+  if (from === to) return;
+  for (const fn of onStageChange) await fn(company, from, to);
+}
+
 /** Move a company forward in the pipeline (never backwards). */
 export async function bumpStage(companyId, stage) {
   if (!companyId || !STAGES.includes(stage)) return;
   const c = await Company.findById(companyId);
   if (c && STAGE_RANK[stage] > STAGE_RANK[c.stage]) {
+    const from = c.stage;
     c.stage = stage;
     await c.save();
+    await stageChanged(c, from, stage);
   }
 }
 

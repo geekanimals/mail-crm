@@ -132,6 +132,24 @@ export async function sendMail({ to, name, email, threadIds = [], unsub, cc = []
   return info.messageId || messageId;
 }
 
+/** A one-off email to a client (estimate, invoice, report) with attachments. Not a marketing email. */
+export async function sendPlain({ to, subject, text, html, attachments = [], cc = [] }) {
+  if (!smtpReady()) throw Object.assign(new Error('Email is not set up (SMTP in .env)'), { status: 503 });
+  const domain = (config.fromEmail.split('@')[1] || 'localhost').toLowerCase();
+  const info = await transport().sendMail({
+    from: { name: config.fromName, address: config.fromEmail },
+    to,
+    cc: cc.length ? cc : undefined,
+    replyTo: config.replyTo || undefined,
+    subject,
+    text,
+    html,
+    attachments,
+    messageId: `<geekcrm.${crypto.randomUUID()}@${domain}>`,
+  });
+  return info.messageId;
+}
+
 export async function verifySmtp() {
   if (!smtpReady()) return { ok: false, error: 'SMTP is not configured in .env' };
   try {

@@ -8,6 +8,7 @@ import { config, imapReady, smtpReady } from './config.js';
 import { Campaign, Contact, EmailLog, Enrollment, Reply, Suppression, bumpStage, getSetting, setSetting, remember, notify, upsertCompany } from './models.js';
 import { buildEmail, sendMail, isBadAddress, parseCc, unsubscribeUrl } from './mail.js';
 import { FOLLOW_UPS, SIGNATURE, SIGNATURE_KEY } from './templates.js';
+import { joinNewsletter, runNewsletters } from './newsletter.js';
 
 const DAY = 86400000;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -340,6 +341,7 @@ async function sendStep(enr, campaign) {
       { $set: { ...progress, status: next ? 'active' : 'completed', nextSendAt: next ? addWorkingDays(now, gap) : null }, $push: { messageIds: messageId } }
     );
     if (!r.matchedCount) await Enrollment.updateOne({ _id: enr._id }, { $set: progress, $push: { messageIds: messageId } });
+    else if (!next) await joinNewsletter(contact._id); // whole sequence sent, no reply: the newsletter takes over
     await EmailLog.create({ campaign: campaign._id, contact: contact._id, enrollment: enr._id, step: stepNo, subject: email.subject, html: email.core.html, text: email.core.text, messageId, trackingId, sentAt: now });
     await notify('sent', contact, { campaign: campaign._id, step: stepNo, text: email.subject });
     await Contact.updateOne({ _id: contact._id, status: 'new' }, { $set: { status: 'contacted' } });
@@ -562,6 +564,7 @@ async function handleMessage(client, m) {
 /* ---------------- start the timers ---------------- */
 export function startWorker() {
   cron.schedule('* * * * *', () => runQueue());
+  cron.schedule('* * * * *', () => runNewsletters());
   if (imapReady()) {
     cron.schedule(`*/${config.replyCheckMinutes} * * * *`, () => checkReplies().catch((e) => console.error('[replies]', e.message)));
     setTimeout(() => checkReplies().catch((e) => console.error('[replies]', e.message)), 5000);

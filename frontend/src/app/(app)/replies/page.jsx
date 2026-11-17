@@ -91,15 +91,16 @@ const css = `
 .rp-item:last-child { border-bottom: 0; }
 .rp-item.done { opacity: .65; }
 .rp-main { flex: 1; min-width: 0; }
-.rp-top { justify-content: space-between; }
+.rp-top { justify-content: space-between; gap: 4px 12px; flex-wrap: wrap; }
+.rp-top > * { min-width: 0; overflow-wrap: anywhere; }
 .rp-tags { margin: 6px 0; gap: 6px; }
 .rp-who { margin-top: 2px; }
 .rp-stage { font-size: 11.5px; font-weight: 600; padding: 2px 9px; border-radius: 99px; background: #f1f5f9; color: #475569; }
 .rp-stage.hot { background: #fff1e6; color: #c2410c; }
 .rp-stage.opportunity { background: #fef9c3; color: #a16207; }
 .rp-stage.account { background: #dcfce7; color: #15803d; }
-.rp-subject { font-weight: 600; font-size: 13.5px; }
-.rp-text { white-space: pre-wrap; background: rgba(255,255,255,.6); border-left: 3px solid var(--c-200); border-radius: 8px; padding: 10px 12px; margin-top: 6px; font-size: 13.5px; color: #334155; }
+.rp-subject { font-weight: 600; font-size: 13.5px; overflow-wrap: anywhere; }
+.rp-text { white-space: pre-wrap; background: rgba(255,255,255,.6); border-left: 3px solid var(--c-200); border-radius: 8px; padding: 10px 12px; margin-top: 6px; font-size: 13.5px; color: #334155; overflow-wrap: anywhere; word-break: break-word; }
 .rp-spin { animation: spin .8s linear infinite; }
 .rp-actions { display: flex; flex-direction: column; gap: 8px; }
 @media (max-width: 600px) {
