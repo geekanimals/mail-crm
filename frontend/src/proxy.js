@@ -8,4 +8,5 @@ export function proxy(request) {
   return NextResponse.next();
 }
 
-export const config = { matcher: '/((?!api/|_next/static|_next/image|favicon.ico).*)' };
+// every path except static files: this frontend has no /api routes of its own, so bot POSTs there are answered here too
+export const config = { matcher: '/((?!_next/static|_next/image|favicon.ico).*)' };
