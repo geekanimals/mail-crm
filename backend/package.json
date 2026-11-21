@@ -7,7 +7,8 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "node --watch server.js"
+    "dev": "node --watch server.js",
+    "test:insights": "node --test insights/tests/*.test.js"
   },
   "engines": {
     "node": ">=18.18"
@@ -22,7 +23,9 @@
     "jsonwebtoken": "^9.0.2",
     "mailparser": "^3.7.2",
     "mongoose": "^8.9.0",
+    "multer": "^2.0.2",
     "node-cron": "^3.0.3",
-    "nodemailer": "^6.9.16"
+    "nodemailer": "^6.9.16",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   }
 }

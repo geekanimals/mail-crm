@@ -25,6 +25,7 @@ export default function PortalPage() {
     api('/api/portal')
       .then((r) => {
         if (r.me.role === 'admin') return router.replace('/');
+        if (r.me.role === 'insights') return router.replace('/insights'); // Insights logins only see the Insights Dashboard
         setData(r);
       })
       .catch(() => router.replace('/login'));

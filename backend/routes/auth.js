@@ -1,4 +1,5 @@
-// Login. Admin = ADMIN_USERNAME / ADMIN_PASSWORD from .env.
+// Login. Admin = ADMIN_USERNAME / ADMIN_PASSWORD from .env → CRM.
+// Insights = INSIGHTS_USERNAME / INSIGHTS_PASSWORD from .env → only the Insights Dashboard.
 // Team members and clients get a login (email + password) created by the admin.
 import crypto from 'node:crypto';
 import { Router } from 'express';
@@ -19,6 +20,9 @@ router.post('/login', loginLimit, async (req, res, next) => {
     const password = String(req.body?.password || '');
     if (same(username, config.adminUser) & same(password, config.adminPass)) {
       return res.json({ token: sign({ sub: config.adminUser, role: 'admin' }), user: config.adminUser, role: 'admin' });
+    }
+    if (config.insightsUser && same(username, config.insightsUser) & same(password, config.insightsPass)) {
+      return res.json({ token: sign({ sub: config.insightsUser, role: 'insights' }), user: config.insightsUser, role: 'insights' });
     }
     const user = username.includes('@') ? await User.findOne({ email: username.toLowerCase() }) : null;
     let ok = checkPassword(password, user?.passwordHash || DUMMY); // always check, so timing gives nothing away
@@ -46,6 +50,11 @@ export async function requireAuth(req, res, next) {
       req.role = 'admin';
       return next();
     }
+    if (p.role === 'insights' && config.insightsUser && p.sub === config.insightsUser) {
+      req.user = p.sub;
+      req.role = 'insights';
+      return next();
+    }
     if (!['team', 'client'].includes(p.role)) throw new Error();
     const user = await User.findById(p.sub).lean();
     if (!user || !user.active || user.role !== p.role) throw new Error();
@@ -69,7 +78,7 @@ router.get('/me', requireAuth, (req, res) => res.json({ user: req.user, role: re
 // team members and clients change their own password (the admin password stays in .env)
 router.post('/password', loginLimit.slice(0, 1), requireAuth, async (req, res, next) => {
   try {
-    if (req.role === 'admin') return res.status(400).json({ error: 'The admin password is set on the server (.env)' });
+    if (req.role === 'admin' || req.role === 'insights') return res.status(400).json({ error: 'This password is set on the server (.env)' });
     const user = await User.findById(req.account._id);
     if (!checkPassword(String(req.body?.current || ''), user.passwordHash)) return res.status(400).json({ error: 'Current password is wrong' });
     const pw = String(req.body?.password || '');

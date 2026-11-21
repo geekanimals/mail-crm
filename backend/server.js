@@ -22,6 +22,7 @@ import meRoutes from './routes/me.js';
 import fileRoutes from './routes/files.js';
 import dealRoutes from './routes/deals.js';
 import newsletterRoutes from './routes/newsletter.js';
+import insightsRoutes, { ensureDefaultAccounts } from './insights/index.js';
 import { Company, Contact, Notification, Reply, getSetting, setSetting } from './models.js';
 import { syncPipeline } from './worker.js';
 
@@ -57,7 +58,7 @@ app.use('/api', (req, _res, next) => (clean(req.body), next()));
 
 // stricter limits for heavy / email-sending actions
 const heavyWrites = (req, res, next) => (req.method === 'GET' ? next() : heavyLimit(req, res, next)); // checking progress is not limited
-app.use(['/api/files', '/api/contacts/import', '/api/contacts/import-continue', '/api/companies/import/google', '/api/settings/run', '/api/settings/test-smtp', '/api/replies/check', '/api/campaigns/:id/start'], heavyWrites);
+app.use(['/api/files', '/api/contacts/import', '/api/contacts/import-continue', '/api/companies/import/google', '/api/settings/run', '/api/settings/test-smtp', '/api/replies/check', '/api/campaigns/:id/start', '/api/insights/uploads'], heavyWrites);
 app.use('/api/settings/test-email', testEmailLimit);
 
 app.use('/api/auth', authRoutes);
@@ -65,6 +66,7 @@ app.use('/api/portal', requireAuth, portalRoutes); // team members + clients
 app.use('/api/me', requireAuth, meRoutes); // employee portal (team members)
 app.use('/api/files', requireAuth, fileRoutes); // HR files: the admin, or the employee they belong to
 app.use('/api/deals', requireAuth, dealRoutes); // client work after an account: admin + the employees on it
+app.use('/api/insights', requireAuth, insightsRoutes); // Insights Dashboard: admin + Insights logins (checked inside)
 const admin = [requireAuth, requireAdmin]; // everything else: admin only
 app.use('/api/contacts', ...admin, contactRoutes);
 app.use('/api/campaigns', ...admin, campaignRoutes);
@@ -103,6 +105,7 @@ async function migrate() {
     await Contact.createIndexes();
   });
   await step('company indexes', () => Company.createIndexes());
+  await step('insights companies', ensureDefaultAccounts); // first run: the default Insights companies
 
   // the same reply saved twice (two servers checked the inbox at once): keep the first one, then make it impossible
   await step('duplicate replies', async () => {

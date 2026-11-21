@@ -1,8 +1,8 @@
 'use client';
-// Login page - admin (ID & password from .env), team members and clients (email + password made by the admin)
+// Login page - admin (ID & password from .env), team members, clients and Insights users (email + password made by the admin)
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
-import { LuBan, LuEye, LuEyeOff, LuLock, LuReply, LuRefreshCw, LuSend, LuUser } from 'react-icons/lu';
+import { LuBriefcase, LuEye, LuEyeOff, LuLock, LuSend, LuTrendingUp, LuUser, LuUserCog } from 'react-icons/lu';
 import { api, setRole, setToken } from '@/lib/api';
 
 const LOGO = process.env.NEXT_PUBLIC_LOGO_URL || '/fav.png';
@@ -22,7 +22,8 @@ export default function LoginPage() {
       const r = await api('/api/auth/login', { method: 'POST', body: form });
       setToken(r.token);
       setRole(r.role);
-      router.replace(r.role === 'admin' ? '/' : '/portal');
+      // the login decides where to go: admin → CRM, Insights user → Insights Dashboard, team / client → portal
+      router.replace(r.role === 'admin' ? '/' : r.role === 'insights' ? '/insights' : '/portal');
     } catch (err) {
       setError(err.message);
       setBusy(false);
@@ -33,12 +34,13 @@ export default function LoginPage() {
     <div className="login">
       <style>{css}</style>
       <section className="login-left">
-        <h2>Follow-ups that run themselves.<br /><span>Stop the moment they reply.</span></h2>
+        <h2>Everything at Geek,<br /><span>in one place.</span></h2>
+        <p className="login-sub">One login for the whole agency — you land on the part that is yours.</p>
         <ul>
-          <li><i><LuSend /></i> Send from your own mailbox</li>
-          <li><i><LuRefreshCw /></i> Automatic follow-ups in the same thread</li>
-          <li><i><LuReply /></i> Reply detected → follow-ups stop</li>
-          <li><i><LuBan /></i> One-click unsubscribe</li>
+          <li><i><LuSend /></i> Leads, campaigns and automatic follow-ups</li>
+          <li><i><LuBriefcase /></i> Pipeline, deals and client accounts</li>
+          <li><i><LuUserCog /></i> Employees, attendance, leave and payroll</li>
+          <li><i><LuTrendingUp /></i> Social media Insights for every brand</li>
         </ul>
       </section>
 
@@ -77,6 +79,7 @@ const css = `
 .login-left { position: relative; z-index: 1; padding: 64px; display: flex; flex-direction: column; justify-content: center; }
 .login-left h2 { font-size: 40px; line-height: 1.15; letter-spacing: -.02em; color: #0e2a33; }
 .login-left h2 span { color: #0b87a5; }
+.login-sub { margin-top: 14px; font-size: 16.5px; color: #4b6873; max-width: 460px; }
 .login-left ul { list-style: none; margin-top: 34px; display: flex; flex-direction: column; gap: 14px; font-size: 16px; color: #3a5560; }
 .login-left li { display: flex; align-items: center; gap: 12px; }
 .login-left li i { width: 38px; height: 38px; border-radius: 12px; display: grid; place-items: center; font-size: 18px; color: #0b87a5; background: rgba(255,255,255,.7); border: 1px solid rgba(50,193,223,.25); backdrop-filter: blur(10px); }

@@ -12,11 +12,15 @@ export const config = {
   publicUrl: str('PUBLIC_BACKEND_URL', 'http://localhost:5001').replace(/\/$/, ''),
   trustProxy: num('TRUST_PROXY', 0),
   mongoUri: str('MONGODB_URI'),
+  insightsMongoUri: str('INSIGHTS_MONGODB_URI'), // Insights Dashboard's own database (separate from the CRM)
 
   // Admin login (only this ID/password can log in)
   adminUser: str('ADMIN_USERNAME'),
   adminPass: process.env.ADMIN_PASSWORD || '',
   jwtSecret: process.env.JWT_SECRET || '',
+  // Insights login (opens only the Insights Dashboard). Leave empty to turn it off.
+  insightsUser: str('INSIGHTS_USERNAME'),
+  insightsPass: process.env.INSIGHTS_PASSWORD || '',
   jwtExpires: str('JWT_EXPIRES_IN', '12h'),
 
   smtp: { host: str('SMTP_HOST'), port: num('SMTP_PORT', 465), secure: bool('SMTP_SECURE', true), user: str('SMTP_USER'), pass: str('SMTP_PASS') },
@@ -69,6 +73,9 @@ export function checkConfig() {
   if (!config.adminUser) errors.push('ADMIN_USERNAME is required');
   if (config.adminPass.length < 8 || config.adminPass === 'change-this-password') errors.push('ADMIN_PASSWORD must be 8+ characters and not the example value');
   if (config.jwtSecret.length < 32 || config.jwtSecret.startsWith('replace-with')) errors.push('JWT_SECRET must be a random string of 32+ characters');
+  if (config.insightsUser && (config.insightsPass.length < 8 || config.insightsUser === config.adminUser)) {
+    errors.push('INSIGHTS_PASSWORD must be 8+ characters, and INSIGHTS_USERNAME must be different from ADMIN_USERNAME');
+  }
   if (errors.length) {
     console.error('\n[config] Fix your .env:\n  - ' + errors.join('\n  - ') + '\n');
     process.exit(1);

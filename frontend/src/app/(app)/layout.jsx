@@ -4,7 +4,7 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
-import { LuBan, LuBell, LuBriefcase, LuCheck, LuFileSpreadsheet, LuKanban, LuNewspaper, LuLayoutDashboard, LuLogOut, LuMenu, LuReply, LuSend, LuSettings, LuUserCog, LuUsers, LuX } from 'react-icons/lu';
+import { LuBan, LuBell, LuBriefcase, LuCheck, LuFileSpreadsheet, LuKanban, LuNewspaper, LuLayoutDashboard, LuLogOut, LuMenu, LuReply, LuSend, LuSettings, LuTrendingUp, LuUserCog, LuUsers, LuX } from 'react-icons/lu';
 import { api, getToken, setRole, setToken } from '@/lib/api';
 
 const ICON = process.env.NEXT_PUBLIC_LOGO_ICON_URL || '/fav.png'; // square logo (always shown)
@@ -19,6 +19,7 @@ const MENU = [
   ['/campaigns', 'Campaigns', LuSend],
   ['/replies', 'Replies', LuReply],
   ['/newsletter', 'Newsletter', LuNewspaper],
+  ['/insights', 'Insights', LuTrendingUp], // social media Insights Dashboard (its own area)
   ['/settings', 'Settings', LuSettings],
 ];
 
@@ -43,7 +44,7 @@ export default function AppLayout({ children }) {
     api('/api/auth/me')
       .then((r) => {
         setRole(r.role);
-        if (r.role !== 'admin') router.replace('/portal'); // team members & clients have their own page
+        if (r.role !== 'admin') router.replace(r.role === 'insights' ? '/insights' : '/portal'); // Insights users, team members & clients have their own page
         else setUser(r.user);
       })
       .catch(() => router.replace('/login'));
