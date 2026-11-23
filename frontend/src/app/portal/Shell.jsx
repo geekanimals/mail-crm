@@ -42,6 +42,11 @@ export default function Shell({ me, tab, setTab, hideAccounts, onLogout, childre
     setOpen(false);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
+  // warm "employee" theme: only while the employee portal is on screen (the admin side never gets it)
+  useEffect(() => {
+    document.body.classList.add('emp-theme');
+    return () => document.body.classList.remove('emp-theme');
+  }, []);
   useEffect(() => {
     document.body.style.overflow = open ? 'hidden' : '';
     return () => { document.body.style.overflow = ''; };
@@ -53,6 +58,7 @@ export default function Shell({ me, tab, setTab, hideAccounts, onLogout, childre
 
   return (
     <div className="es">
+      <style>{themeCss}</style>
       <style>{css}</style>
       {open && <div className="es-dim" onClick={() => setOpen(false)} />}
       <aside className={`es-side ${open ? 'open' : ''}`}>
@@ -70,7 +76,7 @@ export default function Shell({ me, tab, setTab, hideAccounts, onLogout, childre
               <div key={g.group} className="es-group">
                 <span className="es-glabel">{g.group}</span>
                 {list.map(([k, label, I]) => (
-                  <button key={k} className={`es-link ${tab === k ? 'on' : ''}`} onClick={() => go(k)}>
+                  <button key={k} className={`es-link ${tab === k ? 'on' : ''}`} onClick={() => go(k)} title={label}>
                     <I /> <span>{label}</span>
                   </button>
                 ))}
@@ -149,20 +155,33 @@ const css = `
 .es-out { width: 38px; height: 38px; border-radius: 12px; border: 1px solid rgba(225,29,72,.18); background: #fff; color: #e11d48; display: grid; place-items: center; font-size: 17px; cursor: pointer; flex-shrink: 0; }
 .es-out:hover { background: #e11d48; color: #fff; }
 
-.es-main { margin-left: calc(var(--sw) + 32px); min-width: 0; }
-.es-top { position: sticky; top: 0; z-index: 20; display: flex; justify-content: space-between; align-items: center; gap: 12px; margin: 16px 16px 0 0; padding: 14px 20px; border-radius: 22px;
+.es-main { margin-left: calc(var(--sw) + 32px); margin-right: 16px; min-width: 0; }
+.es-top { position: sticky; top: 0; z-index: 20; display: flex; justify-content: space-between; align-items: center; gap: 12px; margin: 16px 0 0; padding: 14px 22px; border-radius: 22px;
   background: rgba(255,255,255,.72); backdrop-filter: blur(24px) saturate(180%); -webkit-backdrop-filter: blur(24px) saturate(180%); border: 1px solid rgba(255,255,255,.9); box-shadow: 0 10px 30px rgba(11,60,75,.07); }
 .es-topleft { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .es-topleft small { display: block; font-size: 12.5px; color: #5d7680; }
 .es-topleft b { display: block; font-size: 18px; letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .es-toplogo { display: none; width: 38px; height: 38px; border-radius: 12px; background: #fff; box-shadow: 0 6px 14px rgba(50,193,223,.25); }
 .es-topme { border: 0; background: none; padding: 0; cursor: pointer; }
-.es-content { max-width: 1080px; margin: 0 auto; padding: 26px 32px 48px 16px; display: flex; flex-direction: column; gap: 16px; }
+.es-content { padding: 26px 0 48px; display: flex; flex-direction: column; gap: 18px; } /* full width, lined up with the top bar */
+@media (min-width: 1800px) { .es-main { max-width: 1640px; } } /* very wide screens: keep lines readable */
 .es-title { display: flex; align-items: center; gap: 14px; margin-bottom: 4px; }
 .es-titleicon { width: 48px; height: 48px; border-radius: 16px; display: grid; place-items: center; font-size: 22px; color: #0b87a5; background: #fff; border: 1px solid rgba(50,193,223,.25); box-shadow: 0 8px 20px rgba(50,193,223,.15); flex-shrink: 0; }
 .es-title h1 { font-size: 26px; letter-spacing: -.02em; margin: 0; }
 .es-title p { margin: 2px 0 0; color: #5d7680; font-size: 14px; }
 .es-bottom, .es-dim { display: none; }
+
+/* desktop: icons only, opens over the page while the mouse is on it (same as the admin sidebar) */
+@media (min-width: 901px) {
+  .es { --sw: 84px; }
+  .es-side { overflow: hidden; transition: width .22s ease, box-shadow .22s ease; }
+  .es-side:hover { width: 264px; box-shadow: 0 30px 70px rgba(11,60,75,.20), inset 0 1px 0 #fff; }
+  .es-brand { padding: 0 4px 14px; }
+  .es-brand > div, .es-glabel, .es-link span, .es-metext { opacity: 0; white-space: nowrap; transition: opacity .15s; }
+  .es-side:hover .es-brand > div, .es-side:hover .es-glabel, .es-side:hover .es-link span, .es-side:hover .es-metext { opacity: 1; }
+  .es-link { padding: 11px 16px; }
+  .es-me { padding: 12px 4px 4px; }
+}
 
 /* ---------- phones and small tablets ---------- */
 @media (max-width: 900px) {
@@ -170,7 +189,7 @@ const css = `
   .es-side.open { transform: none; }
   .es-close { display: grid; }
   .es-dim { display: block; position: fixed; inset: 0; z-index: 35; background: rgba(14,42,51,.3); backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); }
-  .es-main { margin-left: 0; }
+  .es-main { margin-left: 0; margin-right: 0; max-width: none; }
   .es-top { margin: 10px 12px 0; padding: 10px 14px; border-radius: 18px; }
   .es-toplogo { display: block; }
   .es-topleft b { font-size: 16px; }
@@ -186,4 +205,105 @@ const css = `
   .pt-toast { bottom: calc(96px + env(safe-area-inset-bottom)) !important; }
   .es-bottom button.on { background: linear-gradient(150deg, #4fcde7, #1aa9c8); color: #fff; box-shadow: 0 8px 18px rgba(26,169,200,.35); }
 }
+`;
+
+// Warm theme for the employee portal: cream glass on a peach-beige backdrop, charcoal text and buttons,
+// copper accents and one dark highlight card. Everything is scoped to body.emp-theme.
+const themeCss = `
+body.emp-theme { background: #efe6dd; --ink: #26221f; --muted: #8c847d; --copper: #c27c4f; --copper2: #dfa47a; --cream: #f7ede4; --peach: #f3dfcf; --line: rgba(120,90,60,.12); }
+body.emp-theme .pt {
+  color: var(--ink);
+  background:
+    radial-gradient(1100px 600px at -10% -10%, rgba(232,176,136,.45), transparent 60%),
+    radial-gradient(900px 700px at 110% 110%, rgba(214,200,190,.55), transparent 60%),
+    linear-gradient(135deg, #f1e2d4 0%, #f6efe9 45%, #ebe7e4 100%);
+  background-attachment: fixed;
+}
+body.emp-theme .pt h1, body.emp-theme .pt h2, body.emp-theme .pt h3 { color: var(--ink); }
+body.emp-theme .pt-muted, body.emp-theme .es-topleft small, body.emp-theme .es-title p, body.emp-theme .es-brand small, body.emp-theme .es-metext small { color: var(--muted); }
+
+/* glass panels */
+body.emp-theme .es-side, body.emp-theme .es-top, body.emp-theme .pt-card, body.emp-theme .em-tiles > *, body.emp-theme .es-bottom {
+  background: rgba(255,255,255,.52); border: 1px solid rgba(255,255,255,.75);
+  box-shadow: 0 18px 50px rgba(120,80,50,.10), inset 0 1px 0 rgba(255,255,255,.8);
+  backdrop-filter: blur(26px) saturate(140%); -webkit-backdrop-filter: blur(26px) saturate(140%);
+}
+body.emp-theme .es-brand, body.emp-theme .es-me { border-color: var(--line); }
+body.emp-theme .es-brand img, body.emp-theme .es-toplogo { box-shadow: 0 8px 18px rgba(194,124,79,.25); }
+body.emp-theme .es-glabel { color: #b3a89f; }
+
+/* menu */
+body.emp-theme .es-link { color: #6f6760; }
+body.emp-theme .es-link svg { color: #a39a92; }
+body.emp-theme .es-link:hover { background: rgba(243,223,207,.6); color: var(--ink); }
+body.emp-theme .es-link:hover svg { color: var(--copper); }
+body.emp-theme .es-link.on { background: var(--peach); color: var(--ink); box-shadow: inset 0 0 0 1px rgba(194,124,79,.18); }
+body.emp-theme .es-link.on svg { color: var(--copper); }
+body.emp-theme .es-side:hover { box-shadow: 0 30px 70px rgba(120,80,50,.22), inset 0 1px 0 rgba(255,255,255,.8); }
+body.emp-theme .es-close { background: rgba(243,223,207,.7); color: var(--ink); }
+body.emp-theme .es-bottom button { color: #8c847d; }
+body.emp-theme .es-bottom button.on { background: var(--ink); color: #fff; box-shadow: 0 8px 18px rgba(38,34,31,.25); }
+body.emp-theme .es-titleicon { color: var(--copper); background: rgba(255,255,255,.7); border-color: rgba(194,124,79,.2); box-shadow: 0 8px 20px rgba(194,124,79,.12); }
+body.emp-theme .es-avatar.hr-avatar, body.emp-theme .hr-avatar { background: linear-gradient(150deg, #e2ad86, #b8734a); }
+body.emp-theme .es-avatar.hr-avatar { box-shadow: 0 0 0 2px #fff, 0 4px 12px rgba(184,115,74,.25); }
+
+/* buttons, fields, chips */
+body.emp-theme .pt-btn { background: rgba(255,255,255,.75); color: var(--ink); border-color: rgba(120,90,60,.16); }
+body.emp-theme .pt-btn:hover { background: #fff; }
+body.emp-theme .pt-btn.solid, body.emp-theme .pt-btn.solid:hover { background: var(--ink); color: #fff; border-color: transparent; box-shadow: 0 8px 18px rgba(38,34,31,.18); }
+body.emp-theme .pt input, body.emp-theme .pt select, body.emp-theme .pt textarea { background: rgba(255,255,255,.8); border-color: rgba(120,90,60,.18); color: var(--ink); }
+body.emp-theme .pt input:focus, body.emp-theme .pt select:focus, body.emp-theme .pt textarea:focus { outline: 2px solid rgba(194,124,79,.35); border-color: var(--copper); }
+body.emp-theme .em-tabs { background: rgba(255,255,255,.5); border-color: rgba(255,255,255,.75); }
+body.emp-theme .em-tabs button.on { color: var(--ink); background: var(--peach); box-shadow: none; }
+body.emp-theme .em-auto { color: #9a5a33; background: var(--peach); }
+body.emp-theme .em-link, body.emp-theme .em-sum b { color: var(--copper); }
+body.emp-theme .em-listbtn:hover { border-color: rgba(194,124,79,.45); }
+body.emp-theme .pt-dot { background: var(--copper); box-shadow: 0 0 0 4px rgba(194,124,79,.15); }
+body.emp-theme .pt-bar { background: rgba(120,90,60,.10); }
+body.emp-theme .pt-bar span, body.emp-theme .hr-progress i { background: linear-gradient(180deg, var(--copper2), var(--copper)); }
+body.emp-theme .pt-toast { background: var(--ink); }
+
+/* left-over blue bits: big %, checkboxes, team chips, messages */
+body.emp-theme .pt-progress b { color: var(--ink); }
+body.emp-theme .pt input[type=checkbox], body.emp-theme .pt input[type=radio], body.emp-theme .dv-panel input[type=checkbox] { accent-color: var(--copper); }
+body.emp-theme .pt-team span { background: var(--peach); color: #7a4527; }
+body.emp-theme .pt-team span.me { background: var(--ink); color: #fff; }
+body.emp-theme .pt-msg.mine { background: var(--peach); border-color: rgba(194,124,79,.25); }
+body.emp-theme .pt-steps li.now { color: #9a5a33; } body.emp-theme .pt-steps li.now span { background: var(--copper); }
+/* inline-styled shared parts (file links, pop-up buttons, payslip): the old blue becomes copper / charcoal here */
+body.emp-theme [style*="color: rgb(11, 135, 165)"] { color: var(--copper) !important; }
+body.emp-theme [style*="background: rgb(11, 135, 165)"], body.emp-theme [style*="background-color: rgb(11, 135, 165)"] { background: var(--ink) !important; }
+body.emp-theme [style*="border: 1px solid rgb(11, 135, 165)"] { border-color: var(--ink) !important; }
+body.emp-theme [style*="border-bottom: 2px solid rgb(11, 135, 165)"] { border-bottom-color: var(--copper) !important; }
+body.emp-theme [style*="rgb(79, 205, 231)"] { background: var(--ink) !important; }
+body.emp-theme [style*="background: rgb(239, 250, 252)"], body.emp-theme [style*="background-color: rgb(239, 250, 252)"] { background: var(--peach) !important; }
+
+/* numbers */
+body.emp-theme .em-tiles b, body.emp-theme .em-punch b, body.emp-theme .em-heroname b { color: var(--ink); }
+body.emp-theme .em-tiles span, body.emp-theme .em-punch span { color: var(--muted); }
+body.emp-theme .em-tiles.small > * { background: rgba(255,255,255,.7); }
+
+/* the dark highlight card (Today) */
+body.emp-theme .pt-card.em-today { background: linear-gradient(160deg, #2c2724 0%, #1b1917 100%); border-color: rgba(255,255,255,.08); color: #f4ede6; box-shadow: 0 24px 50px rgba(30,20,12,.28); }
+body.emp-theme .em-today h2 { color: #fff; }
+body.emp-theme .em-today .em-punch div { background: rgba(255,255,255,.06); border-color: rgba(255,255,255,.08); }
+body.emp-theme .em-today .em-punch span { color: #b5aaa0; }
+body.emp-theme .em-today .em-punch b { color: #f6dcc6; }
+body.emp-theme .em-today .pt-btn { background: rgba(255,255,255,.08); color: #f4ede6; border-color: rgba(255,255,255,.14); }
+body.emp-theme .em-today .pt-btn.solid { background: linear-gradient(150deg, var(--copper2), var(--copper)); color: #1b1917; box-shadow: 0 8px 20px rgba(194,124,79,.35); }
+
+/* deal screen opened from a task (it sits outside the page, so it is themed here too) */
+body.emp-theme .dv-overlay { background: rgba(60,40,25,.30); }
+body.emp-theme .dv-panel { background: #f6efe8; color: #26221f; }
+body.emp-theme .dv-card, body.emp-theme .dv-money div { background: rgba(255,255,255,.7); border-color: rgba(120,90,60,.12); }
+body.emp-theme .dv-now { border-color: rgba(194,124,79,.45); box-shadow: 0 8px 26px rgba(194,124,79,.14); }
+body.emp-theme .dv-form { background: rgba(243,223,207,.35); }
+body.emp-theme .dv-btn { background: #26221f; }
+body.emp-theme .dv-btn.ghost { background: #fff; color: #26221f; border-color: rgba(120,90,60,.2); }
+body.emp-theme .dv-badge { background: #f3dfcf; color: #9a5a33; }
+body.emp-theme .dv-money b { color: #26221f; }
+body.emp-theme .dv-steps li.now { color: #9a5a33; }
+body.emp-theme .dv-steps li.now .dv-dot { background: linear-gradient(150deg, #dfa47a, #c27c4f); box-shadow: 0 0 0 4px rgba(194,124,79,.22); }
+body.emp-theme .dv-chip { background: #f3dfcf; color: #7a4527; }
+body.emp-theme .dv-busy { color: #9a5a33; }
 `;

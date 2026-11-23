@@ -40,7 +40,7 @@ export function Home({ go }) {
   const a = d.attendance;
   return (
     <>
-      <section className="pt-card">
+      <section className="pt-card em-today">
         <h2>Today · {dayLabel(d.today)}</h2>
         <div className="em-punch">
           <div><span>Check-in</span><b>{time(a?.checkIn)}</b></div>
