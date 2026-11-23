@@ -161,7 +161,7 @@ const s = {
   },
   swap: {
     border: `1px solid ${theme.border}`,
-    background: "#fff",
+    background: theme.glassSoft,
     padding: "10px 14px",
     borderRadius: 12,
     fontWeight: 600,

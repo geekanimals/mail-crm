@@ -10,7 +10,7 @@ import { fmtMetric, fmtValue } from "@/lib/insights/format";
 
 const HEIGHT = 200;
 
-export default function PeriodColumns({ periods, metric, focus = [], color = "#32c1df" }) {
+export default function PeriodColumns({ periods, metric, focus = [], color = "#2d6a5f" }) {
   const box = useRef(null);
   // on small screens start scrolled to the newest weeks
   useEffect(() => {
@@ -32,7 +32,7 @@ export default function PeriodColumns({ periods, metric, focus = [], color = "#3
           const down = pct !== undefined && pct !== null && pct < 0;
           const upNow = pct !== undefined && (pct === null || pct > 0);
           const isFocus = focus.includes(p.key);
-          const bg = !before ? `linear-gradient(180deg, ${color}aa, ${color})` : down ? "linear-gradient(180deg, #fb7185, #e11d48)" : upNow ? "linear-gradient(180deg, #4ade80, #16a34a)" : "linear-gradient(180deg, #a5d8e4, #6bbccf)";
+          const bg = !before ? `linear-gradient(180deg, ${color}aa, ${color})` : down ? "linear-gradient(180deg, #fb7185, #e11d48)" : upNow ? "linear-gradient(180deg, #4ade80, #16a34a)" : "linear-gradient(180deg, #b5d4ca, #7fb3a6)";
           return (
             <div key={p.key} style={s.col} title={`${p.label}: ${fmtMetric(metric, p.value)}`}>
               <div style={s.barArea}>
@@ -49,7 +49,7 @@ export default function PeriodColumns({ periods, metric, focus = [], color = "#3
               <div style={s.label}>
                 <span style={{ ...s.period, ...(isFocus ? { color: theme.text, fontWeight: 700 } : {}) }}>{p.label}</span>
                 {pct === undefined ? (
-                  <span style={{ ...s.chip, color: theme.muted, background: "#eef3f5" }}>start</span>
+                  <span style={{ ...s.chip, color: theme.muted, background: "#e9f2ee" }}>start</span>
                 ) : (
                   <span style={{ ...s.chip, color: down ? theme.red : theme.green, background: down ? theme.redSoft : theme.greenSoft }}>
                     {pct === null ? "New" : `${down ? "▼" : "▲"} ${Math.abs(pct).toFixed(0)}%`}
@@ -67,13 +67,13 @@ export default function PeriodColumns({ periods, metric, focus = [], color = "#3
 const s = {
   scroll: { overflowX: "auto", paddingBottom: 4 },
   chart: { position: "relative", display: "flex", alignItems: "flex-end", gap: 10, height: HEIGHT + 58 + 26 },
-  grid: { position: "absolute", left: 0, right: 0, borderTop: "1px dashed rgba(11,60,75,0.08)" },
+  grid: { position: "absolute", left: 0, right: 0, borderTop: "1px dashed rgba(20,50,44,0.08)" },
   col: { flex: "1 0 76px", maxWidth: 130, display: "flex", flexDirection: "column", alignItems: "center", position: "relative", zIndex: 1 },
   barArea: { height: HEIGHT + 22, display: "flex", flexDirection: "column", justifyContent: "flex-end", alignItems: "center", width: "100%" },
   val: { fontSize: 11.5, fontWeight: 600, color: theme.muted, marginBottom: 5, whiteSpace: "nowrap" },
   valFocus: { fontSize: 13, fontWeight: 800, color: theme.text },
   bar: { width: "62%", maxWidth: 46, borderRadius: "9px 9px 4px 4px", transition: "height .4s ease" },
-  barFocus: { boxShadow: "0 8px 18px -8px rgba(11,60,75,0.45)", outline: "2px solid rgba(255,255,255,0.9)" },
+  barFocus: { boxShadow: "0 8px 18px -8px rgba(20,50,44,0.45)", outline: "2px solid rgba(255,255,255,0.9)" },
   label: { height: 58, display: "flex", flexDirection: "column", alignItems: "center", gap: 4, paddingTop: 8 },
   period: { fontSize: 11.5, color: theme.muted, whiteSpace: "nowrap" },
   chip: { fontSize: 11, fontWeight: 700, padding: "1px 8px", borderRadius: 999, whiteSpace: "nowrap" },

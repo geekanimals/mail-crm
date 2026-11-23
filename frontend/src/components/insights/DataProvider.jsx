@@ -61,6 +61,13 @@ export function DataProvider({ children }) {
     await reload();
   };
 
+  // many at once → returns how many were deleted
+  const removeRows = async (ids) => {
+    const { deleted } = await api.deleteEntries(ids);
+    await reload();
+    return deleted;
+  };
+
   // Returns the saved name (an existing company is reused, any letter case)
   const addAccount = async (name) => {
     const { account } = await api.addAccount(name);
@@ -70,7 +77,7 @@ export function DataProvider({ children }) {
 
   return (
     <DataContext.Provider
-      value={{ rows, accounts, accountColors: accountColors(accounts), status, error, reload, upsertRow, saveRows, removeRow, addAccount }}
+      value={{ rows, accounts, accountColors: accountColors(accounts), status, error, reload, upsertRow, saveRows, removeRow, removeRows, addAccount }}
     >
       {children}
     </DataContext.Provider>

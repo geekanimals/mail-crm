@@ -1,4 +1,5 @@
-// Saved weekly entries: list, save (add or replace), bulk save, delete
+// Saved weekly entries: list, save (add or replace), bulk save, delete one / many
+import mongoose from "mongoose";
 import { Entry } from "../models/Entry.js";
 import { METRIC_KEYS, PLATFORMS } from "../constants/metrics.js";
 import { addAccount } from "./accountService.js";
@@ -64,6 +65,16 @@ export async function saveMany(rows) {
 export async function deleteEntry(id) {
   const entry = await Entry.findByIdAndDelete(id);
   if (!entry) throw notFound("Entry not found");
+}
+
+// Delete many entries by id (only what the user picked on the All Data page — never automatic)
+export async function deleteEntries(ids) {
+  if (!Array.isArray(ids) || !ids.length) throw badRequest("Pick at least one entry to delete");
+  if (ids.length > 5000) throw badRequest("Too many entries at once (max 5000)");
+  const valid = ids.filter((id) => mongoose.isValidObjectId(id));
+  if (valid.length !== ids.length) throw badRequest("Some entry ids are not valid");
+  const { deletedCount } = await Entry.deleteMany({ _id: { $in: valid } });
+  return deletedCount;
 }
 
 // Latest entry before a date (used to work out total followers)

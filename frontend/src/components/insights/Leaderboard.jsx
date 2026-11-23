@@ -38,7 +38,7 @@ const s = {
     width: 28,
     height: 28,
     borderRadius: 9,
-    background: "#f1f2f8",
+    background: "rgba(118,118,128,0.12)",
     color: theme.muted,
     display: "grid",
     placeItems: "center",
@@ -51,7 +51,7 @@ const s = {
   top: { display: "flex", justifyContent: "space-between", fontSize: 13.5, marginBottom: 6 },
   name: { fontWeight: 650, color: theme.text },
   value: { fontWeight: 700, color: theme.text },
-  track: { height: 7, background: "#f1f2f8", borderRadius: 999, overflow: "hidden" },
+  track: { height: 7, background: "rgba(118,118,128,0.12)", borderRadius: 999, overflow: "hidden" },
   bar: { height: "100%", borderRadius: 999 },
   empty: { padding: 20, color: theme.muted, textAlign: "center" },
 };

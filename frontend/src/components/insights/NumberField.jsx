@@ -37,7 +37,7 @@ const s = {
     color: theme.text,
     outline: "none",
     width: "100%",
-    background: "#fff",
+    background: theme.glassSoft,
   },
   inputAuto: { borderColor: "#bbf7d0", background: "#f7fef9" },
   hint: { fontSize: 11.5, color: theme.faint },

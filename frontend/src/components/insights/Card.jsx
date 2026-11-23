@@ -19,13 +19,13 @@ export default function Card({ title, subtitle, right, children, style }) {
 
 const s = {
   card: {
-    background: theme.card,
-    border: `1px solid ${theme.border}`,
+    background: theme.glass,
+    border: `1px solid ${theme.glassBorder}`,
     borderRadius: theme.radius,
     padding: 22,
     boxShadow: theme.shadow,
-    backdropFilter: "blur(24px) saturate(180%)",
-    WebkitBackdropFilter: "blur(24px) saturate(180%)",
+    backdropFilter: theme.blur,
+    WebkitBackdropFilter: theme.blur,
     minWidth: 0,
   },
   head: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 18, gap: 12, flexWrap: "wrap" },

@@ -1,6 +1,7 @@
 "use client";
 
-// Insights sidebar — same look as the Geek CRM sidebar: glass panel, Geek logo, cyan active item.
+// Insights sidebar — same layout as the Geek CRM sidebar but its own look: Apple-style frosted glass with a
+// teal-green tint, deep teal active item, Geek logo + "Geek Insights" name.
 // Desktop: icons only, opens on hover. Tablet / mobile: slide-out menu (open = true).
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -9,7 +10,6 @@ import { setRole, setToken } from "@/lib/api";
 import { useSession } from "./Session";
 
 const ICON = process.env.NEXT_PUBLIC_LOGO_ICON_URL || "/fav.png"; // square Geek logo
-const WORDMARK = process.env.NEXT_PUBLIC_BRAND_LOGO_URL || "/logo.png"; // Geek name, shown when the sidebar opens
 
 const LINKS = [
   { href: "/insights", label: "Overview", Icon: LuLayoutDashboard },
@@ -49,8 +49,9 @@ export default function Sidebar({ open, drawer, onHover, onClose }) {
       <div style={s.brand}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={ICON} alt="Geek" style={s.brandIcon} />
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={WORDMARK} alt="" style={{ ...s.brandName, opacity: wide ? 1 : 0 }} />
+        <span style={{ ...s.brandName, opacity: wide ? 1 : 0 }}>
+          Geek <b style={s.brandAccent}>Insights</b>
+        </span>
         {drawer && (
           <button type="button" onClick={onClose} aria-label="Close menu" style={s.close}>
             <LuX />
@@ -95,24 +96,18 @@ const s = {
     display: "flex",
     flexDirection: "column",
     gap: 8,
-    background: "linear-gradient(135deg, rgba(255,255,255,0.55) 0%, rgba(255,255,255,0.28) 45%, rgba(50,193,223,0.12) 100%)",
-    backdropFilter: "blur(22px) saturate(200%) brightness(1.06)",
-    WebkitBackdropFilter: "blur(22px) saturate(200%) brightness(1.06)",
-    border: "1px solid rgba(255,255,255,0.9)",
-    boxShadow: "0 1px 2px rgba(11,60,75,0.04), 0 10px 32px rgba(11,60,75,0.08)",
+    background: "linear-gradient(160deg, rgba(255,255,255,0.62) 0%, rgba(255,255,255,0.34) 55%, rgba(45,106,95,0.16) 100%)",
+    backdropFilter: "blur(30px) saturate(190%)",
+    WebkitBackdropFilter: "blur(30px) saturate(190%)",
+    border: "1px solid rgba(255,255,255,0.8)",
+    boxShadow: "0 12px 40px rgba(20,60,50,0.12), inset 0 1px 0 rgba(255,255,255,0.9)",
     transition: "width .3s cubic-bezier(.2,.8,.2,1), transform .25s",
   },
   sideOpen: {
-    background: "linear-gradient(135deg, rgba(255,255,255,0.8) 0%, rgba(255,255,255,0.6) 45%, rgba(50,193,223,0.16) 100%)",
+    background: "linear-gradient(160deg, rgba(255,255,255,0.85) 0%, rgba(255,255,255,0.65) 55%, rgba(45,106,95,0.18) 100%)",
+    boxShadow: "0 20px 50px rgba(20,60,50,0.18), inset 0 1px 0 rgba(255,255,255,0.9)",
   },
-  sideDrawer: {
-    top: 0,
-    left: 0,
-    bottom: 0,
-    width: 240,
-    borderRadius: "0 30px 30px 0",
-    background: "rgba(255,255,255,0.92)",
-  },
+  sideDrawer: { top: 0, left: 0, bottom: 0, width: 240, borderRadius: "0 30px 30px 0", background: "rgba(255,255,255,0.88)" },
   brand: { position: "relative", display: "flex", alignItems: "center", gap: 12, height: 48, padding: "0 4px", marginBottom: 6, flexShrink: 0 },
   brandIcon: {
     width: 44,
@@ -121,17 +116,18 @@ const s = {
     flexShrink: 0,
     objectFit: "contain",
     background: "#fff",
-    boxShadow: "0 8px 18px rgba(50,193,223,0.25)",
+    boxShadow: "0 8px 18px rgba(45,106,95,0.3)",
   },
-  brandName: { height: 30, width: "auto", maxWidth: 120, objectFit: "contain", flexShrink: 0, transition: "opacity .18s" },
+  brandName: { color: "#17302b", fontSize: 16, fontWeight: 600, whiteSpace: "nowrap", transition: "opacity .18s", letterSpacing: -0.2 },
+  brandAccent: { fontWeight: 800, background: "linear-gradient(135deg, #2d6a5f, #1f4d44)", WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent" },
   close: {
     marginLeft: "auto",
     width: 36,
     height: 36,
     borderRadius: 12,
     border: "none",
-    background: "rgba(50,193,223,0.12)",
-    color: "#0b87a5",
+    background: "rgba(45,106,95,0.12)",
+    color: "#2d6a5f",
     fontSize: 18,
     display: "grid",
     placeItems: "center",
@@ -146,7 +142,7 @@ const s = {
     height: 48,
     padding: "0 12px",
     borderRadius: 16,
-    color: "#4b6873",
+    color: "#2f4741",
     fontWeight: 500,
     fontSize: 14.5,
     whiteSpace: "nowrap",
@@ -161,11 +157,11 @@ const s = {
   },
   active: {
     color: "#fff",
-    background: "linear-gradient(150deg, #5fd3eb 0%, #32c1df 55%, #1aa9c8 100%)",
-    boxShadow: "0 10px 24px rgba(50,193,223,0.35), inset 0 1px 0 rgba(255,255,255,0.45)",
+    background: "linear-gradient(135deg, #3f8a7b 0%, #2d6a5f 45%, #1f4d44 100%)",
+    boxShadow: "0 10px 24px rgba(45,106,95,0.38), inset 0 1px 0 rgba(255,255,255,0.35)",
   },
   icon: { width: 24, height: 24, display: "grid", placeItems: "center", flexShrink: 0, fontSize: 21 },
   label: { transition: "opacity .18s" },
-  line: { height: 1, background: "rgba(11,60,75,0.08)", margin: "auto 8px 6px", flexShrink: 0 },
-  logout: { color: "#be123c" },
+  line: { height: 1, background: "rgba(0,0,0,0.08)", margin: "auto 8px 6px", flexShrink: 0 },
+  logout: { color: "#d70015" },
 };

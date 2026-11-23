@@ -20,7 +20,7 @@ export default function MetricScore({ label, icon, color, metric, prev, cur, pre
       <div style={s.head}>
         <span style={{ ...s.icon, color, background: color + "1f" }}>{icon}</span>
         <span style={s.label}>{label}</span>
-        <span style={{ ...s.badge, color: tone, background: same ? "#eef3f5" : down ? theme.redSoft : theme.greenSoft }}>
+        <span style={{ ...s.badge, color: tone, background: same ? "#e9f2ee" : down ? theme.redSoft : theme.greenSoft }}>
           {pct === null ? "New" : same ? "0%" : `${down ? "▼" : "▲"} ${Math.abs(pct).toFixed(0)}%`}
         </span>
       </div>
@@ -43,7 +43,9 @@ const s = {
     textAlign: "left",
     cursor: "pointer",
     fontFamily: "inherit",
-    background: "rgba(255,255,255,0.78)",
+    background: theme.glass,
+    backdropFilter: theme.blur,
+    WebkitBackdropFilter: theme.blur,
     borderWidth: "3px 1px 1px 1px",
     borderStyle: "solid",
     borderColor: theme.border,
@@ -53,7 +55,7 @@ const s = {
     minWidth: 0,
     transition: "transform .15s, box-shadow .15s",
   },
-  active: { boxShadow: "0 0 0 2px #32c1df, 0 12px 26px -12px rgba(50,193,223,0.6)" },
+  active: { boxShadow: "0 0 0 2px #2d6a5f, 0 12px 26px -12px rgba(45,106,95,0.6)" },
   head: { display: "flex", alignItems: "center", gap: 8, marginBottom: 8 },
   icon: { width: 26, height: 26, borderRadius: 8, display: "grid", placeItems: "center", fontSize: 13, flexShrink: 0 },
   label: { fontSize: 13, fontWeight: 600, color: theme.muted, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },

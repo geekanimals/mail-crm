@@ -47,14 +47,14 @@ export default function InsightsLayout({ children }) {
 }
 
 const s = {
-  page: { color: "#0e2a33", minHeight: "100vh" },
-  loading: { minHeight: "100vh", display: "grid", placeItems: "center", background: "#f3fbfd" },
+  page: { color: "#17302b", minHeight: "100vh" },
+  loading: { minHeight: "100vh", display: "grid", placeItems: "center", background: "#eef5f2" },
   spinner: {
     width: 34,
     height: 34,
     borderRadius: "50%",
-    border: "3px solid rgba(50,193,223,0.14)",
-    borderTopColor: "#32c1df",
+    border: "3px solid rgba(45,106,95,0.14)",
+    borderTopColor: "#2d6a5f",
     animation: "ins-spin .8s linear infinite",
   },
 };

@@ -6,7 +6,7 @@ import { theme } from "@/lib/insights/constants";
 const TONES = {
   down: { mark: "▼", color: theme.red, soft: theme.redSoft, tag: "Needs work" },
   up: { mark: "▲", color: theme.green, soft: theme.greenSoft, tag: "Working" },
-  info: { mark: "●", color: "#0b87a5", soft: "rgba(50,193,223,0.12)", tag: "Note" },
+  info: { mark: "●", color: "#2d6a5f", soft: "rgba(45,106,95,0.12)", tag: "Note" },
 };
 
 export default function Findings({ findings }) {
@@ -30,7 +30,7 @@ export default function Findings({ findings }) {
               <span style={s.text}>{f.why}</span>
             </div>
             <div style={s.row}>
-              <span style={{ ...s.key, color: "#0b87a5" }}>Do this</span>
+              <span style={{ ...s.key, color: "#2d6a5f" }}>Do this</span>
               <span style={{ ...s.text, color: theme.text, fontWeight: 500 }}>{f.todo}</span>
             </div>
           </div>
@@ -43,7 +43,9 @@ export default function Findings({ findings }) {
 const s = {
   list: { display: "flex", flexDirection: "column", gap: 12 },
   item: {
-    background: "rgba(255,255,255,0.8)",
+    background: theme.glass,
+    backdropFilter: theme.blur,
+    WebkitBackdropFilter: theme.blur,
     border: `1px solid ${theme.border}`,
     borderLeftWidth: 4,
     borderLeftStyle: "solid",

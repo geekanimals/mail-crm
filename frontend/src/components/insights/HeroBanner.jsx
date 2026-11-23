@@ -58,7 +58,7 @@ const s = {
     gap: 24,
     flexWrap: "wrap",
     marginBottom: 22,
-    boxShadow: "0 20px 40px -20px rgba(50,193,223,0.7)",
+    boxShadow: "0 20px 40px -20px rgba(45,106,95,0.7)",
   },
   circle1: { position: "absolute", width: 320, height: 320, borderRadius: "50%", background: "rgba(255,255,255,0.10)", right: -80, top: -140 },
   circle2: { position: "absolute", width: 200, height: 200, borderRadius: "50%", background: "rgba(255,255,255,0.08)", right: 220, bottom: -120 },

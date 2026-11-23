@@ -28,3 +28,9 @@ export async function exportCSV(req, res) {
   res.setHeader("Content-Disposition", 'attachment; filename="insights-data.csv"');
   res.send(entriesToCSV(data));
 }
+
+// { ids: [...] } → removed from the database
+export async function removeMany(req, res) {
+  const deleted = await entries.deleteEntries(req.body?.ids);
+  res.json({ deleted });
+}

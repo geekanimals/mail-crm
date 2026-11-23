@@ -57,7 +57,7 @@ const s = {
     textTransform: "uppercase",
     letterSpacing: 0.6,
     borderBottom: `1px solid ${theme.border}`,
-    background: "#fafbfe",
+    background: "rgba(255,255,255,0.35)",
     whiteSpace: "nowrap",
   },
   td: { textAlign: "right", padding: "13px 14px", borderBottom: `1px solid ${theme.border}`, color: theme.text, whiteSpace: "nowrap" },

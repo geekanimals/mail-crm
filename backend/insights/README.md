@@ -26,7 +26,8 @@ frontend (`/insights`) shows charts and week / month comparisons.
 |---|---|---|
 | GET | `/entries` · `/entries/export.csv` | saved rows |
 | POST | `/entries` · `/entries/bulk` | save one / many |
-| DELETE | `/entries/:id` | |
+| DELETE | `/entries/:id` | delete one |
+| POST | `/entries/delete` | `{ ids }` delete many (All Data page: selected rows, a whole week, or everything filtered) |
 | GET/POST/PATCH/DELETE | `/accounts` | companies |
 | POST | `/uploads/preview` | files → numbers (nothing saved) |
 | GET | `/uploads/history` | |

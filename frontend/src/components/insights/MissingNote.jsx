@@ -13,9 +13,11 @@ export default function MissingNote({ missing, periodLabel }) {
 
 const s = {
   box: {
-    background: "#fffbeb",
-    color: "#92400e",
-    border: "1px solid #fde68a",
+    background: "rgba(255,204,0,0.14)",
+    color: "#8a4b00",
+    border: "1px solid rgba(255,179,0,0.35)",
+    backdropFilter: theme.blur,
+    WebkitBackdropFilter: theme.blur,
     padding: "12px 16px",
     borderRadius: theme.radius - 4,
     fontSize: 13,

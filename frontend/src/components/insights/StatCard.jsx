@@ -39,11 +39,13 @@ export default function StatCard({ metric, prev, cur, prevLabel, trend, compact 
 
 const s = {
   card: {
-    background: theme.card,
-    border: `1px solid ${theme.border}`,
+    background: theme.glass,
+    border: `1px solid ${theme.glassBorder}`,
     borderRadius: theme.radius,
     padding: 20,
     boxShadow: theme.shadow,
+    backdropFilter: theme.blur,
+    WebkitBackdropFilter: theme.blur,
     minWidth: 0,
   },
   compact: { padding: 16 },

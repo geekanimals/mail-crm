@@ -167,7 +167,7 @@ const s = {
   tipRow: { display: "flex", alignItems: "center", gap: 8, lineHeight: 1.7 },
   dot: { width: 9, height: 9, borderRadius: 999, display: "inline-block", flexShrink: 0 },
   legend: { display: "flex", flexWrap: "wrap", gap: "8px 18px", marginTop: 12, justifyContent: "center", alignItems: "center" },
-  toggle: { border: "1px solid #e5e7f0", background: "#fff", color: "#6b7280", borderRadius: 999, padding: "4px 10px", fontSize: 11.5, fontWeight: 600, cursor: "pointer" },
-  toggleOn: { background: "rgba(50,193,223,0.12)", color: "#0b87a5", borderColor: "rgba(50,193,223,0.4)" },
+  toggle: { border: "1px solid #e5e7f0", background: theme.glassSoft, color: "#6b7280", borderRadius: 999, padding: "4px 10px", fontSize: 11.5, fontWeight: 600, cursor: "pointer" },
+  toggleOn: { background: "rgba(45,106,95,0.12)", color: "#2d6a5f", borderColor: "rgba(45,106,95,0.4)" },
   legendItem: { display: "flex", alignItems: "center", gap: 7, fontSize: 12.5, color: theme.muted, fontWeight: 500 },
 };

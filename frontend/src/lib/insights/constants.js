@@ -7,7 +7,7 @@ export const DEFAULT_ACCOUNTS = ["GBTG", "GEEK", "SUSTAINIFY", "Mayank"];
 
 // core: shown as main cards. snapshot: not added up (latest value is used). money: shown as $
 export const METRICS = [
-  { key: "views", label: "Views", full: "Views / Impressions", icon: "◉", color: "#1aa9c8", group: "Reach", core: true },
+  { key: "views", label: "Views", full: "Views / Impressions", icon: "◉", color: "#2d6a5f", group: "Reach", core: true },
   { key: "reach", label: "Reach", full: "Reach / Viewers", icon: "◎", color: "#0ea5e9", group: "Reach" },
   { key: "likes", label: "Likes", full: "Likes / Interactions", icon: "♥", color: "#ec4899", group: "Engagement", core: true },
   { key: "comments", label: "Comments", full: "Comments", icon: "❝", color: "#f97316", group: "Engagement" },
@@ -34,30 +34,34 @@ export const PLATFORM_COLORS = {
   YouTube: "#FF0000",
 };
 
-const ACCOUNT_PALETTE = ["#32c1df", "#f59e0b", "#10b981", "#ec4899", "#0f766e", "#8b5cf6", "#ef4444", "#84cc16", "#0ea5e9", "#f97316"];
+const ACCOUNT_PALETTE = ["#2d6a5f", "#f59e0b", "#10b981", "#ec4899", "#0f766e", "#8b5cf6", "#ef4444", "#84cc16", "#0ea5e9", "#f97316"];
 
 // { accountName: color } — same order always gives the same color
 export function accountColors(accounts) {
   return Object.fromEntries(accounts.map((a, i) => [a, ACCOUNT_PALETTE[i % ACCOUNT_PALETTE.length]]));
 }
 
-// Geek brand colors (same as the CRM): cyan #32c1df, dark teal text, glass cards
+// Insights look: Apple-style frosted glass on a soft mint background, deep teal-green accent
 export const theme = {
-  bg: "#f3fbfd",
-  card: "rgba(255,255,255,0.74)",
-  border: "rgba(11,60,75,0.08)",
-  text: "#0e2a33",
-  muted: "#5d7680",
-  faint: "#8aa1a9",
-  primary: "#0b87a5",
-  primarySoft: "rgba(50,193,223,0.12)",
-  gradient: "linear-gradient(150deg, #5fd3eb 0%, #32c1df 55%, #1aa9c8 100%)",
-  glow: "rgba(50,193,223,0.35)",
-  green: "#16a34a",
-  greenSoft: "#dcfce7",
-  red: "#e11d48",
-  redSoft: "#ffe4e6",
+  bg: "#eef5f2",
+  card: "rgba(255,255,255,0.55)",
+  glass: "rgba(255,255,255,0.55)", // panels
+  glassSoft: "rgba(255,255,255,0.62)", // inputs, buttons, tabs
+  glassBorder: "rgba(255,255,255,0.75)",
+  blur: "blur(28px) saturate(180%)",
+  border: "rgba(20,50,44,0.08)",
+  text: "#17302b",
+  muted: "#5b726c",
+  faint: "#93a8a2",
+  primary: "#2d6a5f",
+  primarySoft: "rgba(45,106,95,0.12)",
+  gradient: "linear-gradient(135deg, #3f8a7b 0%, #2d6a5f 45%, #1f4d44 100%)",
+  glow: "rgba(45,106,95,0.35)",
+  green: "#248a3d",
+  greenSoft: "rgba(52,199,89,0.16)",
+  red: "#d70015",
+  redSoft: "rgba(255,59,48,0.12)",
   radius: 24,
-  shadow: "0 1px 2px rgba(11,60,75,0.04), 0 10px 32px rgba(11,60,75,0.06)",
+  shadow: "0 8px 32px rgba(20,60,50,0.08), inset 0 1px 0 rgba(255,255,255,0.85)",
 };
 

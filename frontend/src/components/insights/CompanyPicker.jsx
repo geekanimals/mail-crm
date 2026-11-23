@@ -79,10 +79,10 @@ const s = {
     borderColor: theme.primary,
     fontSize: 14,
     outline: "none",
-    boxShadow: "0 0 0 3px rgba(50,193,223,0.15)",
+    boxShadow: "0 0 0 3px rgba(45,106,95,0.15)",
   },
   add: { background: theme.gradient, color: "#fff", border: "none", borderRadius: 10, padding: "0 14px", fontWeight: 700, fontSize: 13, cursor: "pointer" },
   off: { opacity: 0.4, cursor: "not-allowed" },
   error: { fontSize: 12, color: theme.red },
-  cancel: { background: "#fff", border: `1px solid ${theme.border}`, borderRadius: 10, padding: "0 10px", fontSize: 13, color: theme.muted, cursor: "pointer" },
+  cancel: { background: theme.glassSoft, border: `1px solid ${theme.border}`, borderRadius: 10, padding: "0 10px", fontSize: 13, color: theme.muted, cursor: "pointer" },
 };

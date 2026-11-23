@@ -24,11 +24,12 @@ const SHEET = "Task Ledger · Data Entry";
 // where a period's numbers came from: the old Task Ledger sheet or uploaded export files
 const sourceOf = (rows) => (rows.length && rows.every((r) => (r.sourceFiles || []).includes(SHEET)) ? "the Task Ledger sheet" : "uploaded files");
 
+// tinted glass for the one-line verdict
 const VERDICT = {
-  up: { bg: "linear-gradient(135deg, #dcfce7, #f0fdf4)", color: "#15803d", mark: "▲" },
-  down: { bg: "linear-gradient(135deg, #ffe4e6, #fff1f2)", color: "#be123c", mark: "▼" },
-  mixed: { bg: "linear-gradient(135deg, #fef3c7, #fffbeb)", color: "#b45309", mark: "◆" },
-  steady: { bg: "linear-gradient(135deg, rgba(50,193,223,0.16), rgba(255,255,255,0.8))", color: "#0b87a5", mark: "●" },
+  up: { bg: "linear-gradient(135deg, rgba(52,199,89,0.22), rgba(255,255,255,0.5))", color: "#1f7a35", mark: "▲" },
+  down: { bg: "linear-gradient(135deg, rgba(255,59,48,0.18), rgba(255,255,255,0.5))", color: "#c4000f", mark: "▼" },
+  mixed: { bg: "linear-gradient(135deg, rgba(255,159,10,0.22), rgba(255,255,255,0.5))", color: "#a35200", mark: "◆" },
+  steady: { bg: "linear-gradient(135deg, rgba(45,106,95,0.16), rgba(255,255,255,0.55))", color: "#2d6a5f", mark: "●" },
 };
 
 export default function ReportPage() {
@@ -218,7 +219,7 @@ export default function ReportPage() {
                 metric="er"
                 label="Engagement rate"
                 icon="%"
-                color="#0b87a5"
+                color="#2d6a5f"
                 suffix="%"
                 prev={engagementRate(prevT)}
                 cur={engagementRate(curT)}
@@ -308,7 +309,7 @@ const s = {
     borderWidth: 1,
     borderStyle: "solid",
     borderColor: theme.border,
-    background: "#fff",
+    background: theme.glassSoft,
     fontSize: 13.5,
     fontWeight: 600,
     color: theme.text,
@@ -318,10 +319,12 @@ const s = {
   platformOff: { opacity: 0.4, cursor: "not-allowed" },
   dot: { width: 8, height: 8, borderRadius: "50%", display: "inline-block", flexShrink: 0 },
   notes: { display: "flex", flexDirection: "column", gap: 8, marginBottom: 18 },
-  note: { background: "#fffbeb", border: "1px solid #fde68a", color: "#92400e", borderRadius: 14, padding: "10px 14px", fontSize: 13.5, lineHeight: 1.5 },
-  warn: { background: "#fffbeb", border: "1px solid #fde68a", color: "#92400e", borderRadius: 14, padding: "11px 14px", fontSize: 13.5, marginBottom: 14 },
-  verdict: { display: "flex", alignItems: "center", gap: 16, borderRadius: 22, padding: "18px 22px", marginBottom: 18, border: "1px solid rgba(255,255,255,0.9)", boxShadow: theme.shadow },
-  verdictMark: { fontSize: 26, fontWeight: 800, width: 48, height: 48, borderRadius: 16, background: "rgba(255,255,255,0.8)", display: "grid", placeItems: "center", flexShrink: 0 },
+  note: { background: "rgba(255,204,0,0.14)", border: "1px solid rgba(255,179,0,0.35)", color: "#8a4b00", backdropFilter: theme.blur, WebkitBackdropFilter: theme.blur, borderRadius: 14, padding: "10px 14px", fontSize: 13.5, lineHeight: 1.5 },
+  warn: { background: "rgba(255,204,0,0.14)", border: "1px solid rgba(255,179,0,0.35)", color: "#8a4b00", backdropFilter: theme.blur, WebkitBackdropFilter: theme.blur, borderRadius: 14, padding: "11px 14px", fontSize: 13.5, marginBottom: 14 },
+  verdict: { display: "flex", alignItems: "center", gap: 16, borderRadius: 22, padding: "18px 22px", marginBottom: 18, border: `1px solid ${theme.glassBorder}`, boxShadow: theme.shadow, backdropFilter: theme.blur, WebkitBackdropFilter: theme.blur },
+  verdictMark: { fontSize: 26, fontWeight: 800, width: 48, height: 48, borderRadius: 16, background: theme.glass,
+    backdropFilter: theme.blur,
+    WebkitBackdropFilter: theme.blur, display: "grid", placeItems: "center", flexShrink: 0 },
   verdictTitle: { display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", fontSize: 17, fontWeight: 750, color: theme.text },
   verdictRange: { fontSize: 13, fontWeight: 600, color: theme.muted, whiteSpace: "pre" },
   verdictText: { fontSize: 14.5, fontWeight: 600, marginTop: 4 },
@@ -341,11 +344,13 @@ const s = {
     borderWidth: 1,
     borderStyle: "solid",
     borderColor: theme.border,
-    background: "rgba(255,255,255,0.8)",
+    background: theme.glass,
+    backdropFilter: theme.blur,
+    WebkitBackdropFilter: theme.blur,
     cursor: "pointer",
     fontFamily: "inherit",
   },
-  otherOn: { borderColor: "#32c1df", boxShadow: "0 0 0 2px rgba(50,193,223,0.35)" },
+  otherOn: { borderColor: "#2d6a5f", boxShadow: "0 0 0 2px rgba(45,106,95,0.35)" },
   otherHead: { display: "flex", alignItems: "center", gap: 7, fontSize: 13, fontWeight: 600, color: theme.muted },
   otherVal: { fontSize: 20, color: theme.text },
   otherPct: { fontSize: 12, fontWeight: 700 },

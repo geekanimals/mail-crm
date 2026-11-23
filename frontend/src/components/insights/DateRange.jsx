@@ -58,7 +58,7 @@ const s = {
     fontSize: 14,
     fontWeight: 500,
     color: theme.text,
-    background: "#fff",
+    background: theme.glassSoft,
     outline: "none",
   },
   arrow: { paddingBottom: 10, color: theme.faint, fontWeight: 700 },
@@ -67,7 +67,7 @@ const s = {
   presets: { display: "flex", flexWrap: "wrap", gap: 8, marginTop: 14 },
   preset: {
     borderWidth: 1, borderStyle: "solid", borderColor: theme.border,
-    background: "#fff",
+    background: theme.glassSoft,
     color: theme.muted,
     padding: "6px 12px",
     borderRadius: 999,

@@ -39,7 +39,7 @@ const s = {
     alignItems: "center",
     gap: 7,
     borderWidth: 1, borderStyle: "solid", borderColor: theme.border,
-    background: "#fff",
+    background: theme.glassSoft,
     color: theme.muted,
     padding: "7px 12px",
     borderRadius: 999,

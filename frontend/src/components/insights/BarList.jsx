@@ -43,7 +43,7 @@ const s = {
   dot: { width: 8, height: 8, borderRadius: 999 },
   val: { color: theme.text, fontWeight: 700 },
   share: { color: theme.faint, fontWeight: 500, marginLeft: 6 },
-  track: { height: 9, background: "#f1f2f8", borderRadius: 999, overflow: "hidden" },
+  track: { height: 9, background: "rgba(118,118,128,0.12)", borderRadius: 999, overflow: "hidden" },
   bar: { height: "100%", borderRadius: 999 },
   empty: { padding: 20, color: theme.muted, textAlign: "center", fontSize: 13 },
 };

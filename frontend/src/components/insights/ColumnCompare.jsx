@@ -8,10 +8,10 @@ import { change } from "@/lib/insights/calc";
 import { fmtMetric, fmtPct, fmtValue } from "@/lib/insights/format";
 
 const HEIGHT = 230; // bar area in px
-const PREV = "#cfe3ea";
+const PREV = "#cfe3dc";
 const UP = "linear-gradient(180deg, #4ade80, #16a34a)";
 const DOWN = "linear-gradient(180deg, #fb7185, #e11d48)";
-const SAME = "linear-gradient(180deg, #5fd3eb, #1aa9c8)";
+const SAME = "linear-gradient(180deg, #3f8a7b, #2d6a5f)";
 const FILTERS = [
   { value: "all", label: "All" },
   { value: "down", label: "▼ Dropped" },
@@ -103,7 +103,7 @@ export default function ColumnCompare({ list, metric, prevLabel, curLabel }) {
                       <span style={{ ...s.dot, background: PLATFORM_COLORS[x.platform] }} />
                       {x.platform}
                     </span>
-                    <span style={{ ...s.pct, color: down ? theme.red : x.diff > 0 ? theme.green : theme.muted, background: down ? theme.redSoft : x.diff > 0 ? theme.greenSoft : "#eef3f5" }}>
+                    <span style={{ ...s.pct, color: down ? theme.red : x.diff > 0 ? theme.green : theme.muted, background: down ? theme.redSoft : x.diff > 0 ? theme.greenSoft : "#e9f2ee" }}>
                       {fmtPct(x.pct)}
                     </span>
                   </div>
@@ -122,15 +122,15 @@ const s = {
   pills: { display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" },
   pill: { padding: "5px 11px", borderRadius: 999, fontSize: 12.5, fontWeight: 700 },
   callout: { fontSize: 12.5, color: theme.muted, background: "rgba(255,255,255,0.7)", border: `1px solid ${theme.border}`, padding: "5px 11px", borderRadius: 999 },
-  filters: { display: "flex", gap: 6, background: "rgba(50,193,223,0.08)", padding: 4, borderRadius: 12 },
+  filters: { display: "flex", gap: 6, background: "rgba(45,106,95,0.08)", padding: 4, borderRadius: 12 },
   filter: { border: "none", background: "transparent", padding: "7px 12px", borderRadius: 9, fontSize: 12.5, fontWeight: 600, color: theme.muted, cursor: "pointer", fontFamily: "inherit" },
-  filterOn: { background: "#fff", color: theme.primary, boxShadow: "0 2px 8px rgba(11,60,75,0.08)" },
+  filterOn: { background: theme.glassSoft, color: theme.primary, boxShadow: "0 2px 8px rgba(20,50,44,0.08)" },
   legend: { display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 10 },
   legendItem: { display: "flex", alignItems: "center", gap: 7, fontSize: 12.5, color: theme.muted },
   swatch: { width: 12, height: 12, borderRadius: 4 },
   scroll: { overflowX: "auto", paddingBottom: 6 },
   chart: { position: "relative", display: "flex", alignItems: "flex-end", gap: 10, height: HEIGHT + 64 + 34, paddingLeft: 46 },
-  grid: { position: "absolute", left: 46, right: 0, borderTop: "1px dashed rgba(11,60,75,0.08)" },
+  grid: { position: "absolute", left: 46, right: 0, borderTop: "1px dashed rgba(20,50,44,0.08)" },
   gridLabel: { position: "absolute", left: -46, top: -8, width: 40, textAlign: "right", fontSize: 10.5, color: theme.faint },
   group: { flex: "1 0 82px", maxWidth: 140, display: "flex", flexDirection: "column", alignItems: "center", position: "relative", zIndex: 1 },
   bars: { display: "flex", alignItems: "flex-end", gap: 5, height: HEIGHT + 22 },

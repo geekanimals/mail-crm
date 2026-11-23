@@ -84,7 +84,7 @@ const s = {
   dot: { width: 8, height: 8, borderRadius: 999, flexShrink: 0 },
   labelStack: { flexDirection: "column", alignItems: "flex-start", gap: 0, fontSize: 12 },
   platform: { color: theme.muted, fontSize: 12, overflow: "hidden", textOverflow: "ellipsis" },
-  track: { position: "relative", height: 16, background: "#f6f7fb", borderRadius: 999 },
+  track: { position: "relative", height: 16, background: "rgba(118,118,128,0.1)", borderRadius: 999 },
   axis: { position: "absolute", left: "50%", top: -3, bottom: -3, width: 1.5, background: "#c7cbe0" },
   bar: { position: "absolute", top: 2, height: 12 },
   pct: { fontSize: 12.5, fontWeight: 700, textAlign: "right" },

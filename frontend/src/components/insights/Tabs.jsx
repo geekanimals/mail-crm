@@ -22,8 +22,8 @@ const s = {
   wrap: {
     display: "inline-flex",
     flexWrap: "wrap",
-    background: "#fff",
-    border: `1px solid ${theme.border}`,
+    background: "rgba(118,118,128,0.12)",
+    border: "1px solid rgba(255,255,255,0.5)",
     padding: 4,
     borderRadius: 14,
     gap: 2,
@@ -39,5 +39,6 @@ const s = {
     color: theme.muted,
     cursor: "pointer",
   },
-  active: { background: theme.gradient, color: "#fff", boxShadow: "0 4px 12px -4px rgba(50,193,223,0.6)" },
+  // Apple-style segmented control: the picked one is a raised white pill
+  active: { background: "rgba(255,255,255,0.96)", color: theme.text, boxShadow: "0 3px 8px rgba(0,0,0,0.12), 0 1px 1px rgba(0,0,0,0.04)" },
 };

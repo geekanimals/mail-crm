@@ -30,6 +30,7 @@ export const api = {
   saveEntry: (row) => request("/entries", json("POST", row)),
   saveRows: (rows) => request("/entries/bulk", json("POST", { rows })),
   deleteEntry: (id) => request(`/entries/${id}`, { method: "DELETE" }),
+  deleteEntries: (ids) => request("/entries/delete", json("POST", { ids })),
 
   accounts: () => request("/accounts").then((d) => d.accounts),
   addAccount: (name) => request("/accounts", json("POST", { name })),
