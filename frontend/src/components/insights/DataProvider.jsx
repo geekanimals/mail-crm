@@ -4,7 +4,7 @@
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { api } from "@/lib/insights/api";
 import { DEFAULT_ACCOUNTS, accountColors } from "@/lib/insights/constants";
-import { normalize } from "@/lib/insights/calc";
+import { fillFollowers, normalize } from "@/lib/insights/calc";
 
 const DataContext = createContext(null);
 
@@ -17,7 +17,7 @@ export function DataProvider({ children }) {
   const [error, setError] = useState("");
 
   const apply = useCallback(([entries, accounts]) => {
-    setRows(entries.map(normalize));
+    setRows(fillFollowers(entries.map(normalize)));
     setSaved(accounts.map((a) => a.name));
     setStatus("ready");
     setError("");

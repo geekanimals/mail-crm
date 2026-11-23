@@ -77,7 +77,7 @@ export async function deleteEntries(ids) {
   return deletedCount;
 }
 
-// Latest entry before a date (used to work out total followers)
+// Latest entry before a date that has a total-followers number (used to work out total followers)
 export async function previousEntry(account, platform, beforeWeek) {
-  return Entry.findOne({ account, platform, week: { $lt: beforeWeek } }).sort({ week: -1 });
+  return Entry.findOne({ account, platform, week: { $lt: beforeWeek }, followers: { $gt: 0 } }).sort({ week: -1 });
 }

@@ -46,3 +46,26 @@ export function inRange(date, range) {
   if (!date || !range?.start || !range?.end) return true;
   return date >= range.start && date <= range.end;
 }
+
+// Days in a range, counting both ends (2026-11-09 → 2026-11-15 = 7)
+export function rangeDays(start, end) {
+  return Math.round((Date.parse(end + "T00:00:00Z") - Date.parse(start + "T00:00:00Z")) / 86400000) + 1;
+}
+
+// Full Monday–Sunday weeks inside a range, plus the leftover part-week days at the edges
+export function fullWeeks(start, end) {
+  const weeks = [];
+  const day = new Date(start + "T00:00:00Z").getUTCDay(); // 0 = Sunday
+  let monday = addDays(start, (8 - day) % 7); // first Monday on or after start
+  while (addDays(monday, 6) <= end) {
+    weeks.push({ start: monday, end: addDays(monday, 6) });
+    monday = addDays(monday, 7);
+  }
+  const skipped = [];
+  if (!weeks.length) skipped.push({ start, end });
+  else {
+    if (weeks[0].start > start) skipped.push({ start, end: addDays(weeks[0].start, -1) });
+    if (weeks.at(-1).end < end) skipped.push({ start: addDays(weeks.at(-1).end, 1), end });
+  }
+  return { weeks, skipped };
+}

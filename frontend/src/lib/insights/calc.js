@@ -9,6 +9,22 @@ export function normalize(r) {
   return { ...zero(), ...r, end: r.end || r.week };
 }
 
+// Total followers never drop to zero for real. When an entry was saved without them (e.g. a video-only
+// export), use the last known total for that account + platform so charts don't show a false −100%.
+export function fillFollowers(rows) {
+  const last = {};
+  return [...rows]
+    .sort((a, b) => a.week.localeCompare(b.week))
+    .map((r) => {
+      const k = r.account + "|" + r.platform;
+      if (r.followers > 0) {
+        last[k] = r.followers;
+        return r;
+      }
+      return last[k] ? { ...r, followers: last[k], followersCarried: true } : r;
+    });
+}
+
 export function filterRows(rows, { account = "All", platform = "All" } = {}) {
   return rows.filter(
     (r) => (account === "All" || r.account === account) && (platform === "All" || r.platform === platform)

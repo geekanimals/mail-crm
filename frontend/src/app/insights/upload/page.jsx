@@ -12,7 +12,7 @@ import DropZone from "@/components/insights/DropZone";
 import NumberField from "@/components/insights/NumberField";
 import { useData } from "@/components/insights/DataProvider";
 import { api } from "@/lib/insights/api";
-import { presets, todayISO } from "@/lib/insights/dates";
+import { daysBetween, presets, todayISO } from "@/lib/insights/dates";
 import { DEFAULT_ACCOUNTS, METRICS, PLATFORMS, PLATFORM_COLORS, metricOf, theme } from "@/lib/insights/constants";
 import { fmtFull, fmtRange } from "@/lib/insights/format";
 
@@ -44,7 +44,8 @@ export default function UploadPage() {
   const [detected, setDetected] = useState(null);
   const [saved, setSaved] = useState("");
   const [warnings, setWarnings] = useState([]);
-  const [weekly, setWeekly] = useState([]); // rows from summary sheets
+  const [weekly, setWeekly] = useState([]); // rows from summary sheets, or the weekly split of a long range
+  const [split, setSplit] = useState(null); // { weeks, skipped } when the range is longer than a week
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -52,6 +53,7 @@ export default function UploadPage() {
   const def = useSyncExternalStore(noop, lastWeek, () => "|");
   const range = picked || { start: def.split("|")[0], end: def.split("|")[1] };
   const validRange = range.start && range.end && range.end >= range.start;
+  const longRange = validRange && daysBetween(range.start, range.end) > 7; // saved week by week, not as one entry
 
   const prevRow = rows
     .filter((r) => r.account === account && r.platform === platform && r.week < range.start)
@@ -77,7 +79,8 @@ export default function UploadPage() {
       );
       setDetected(res.detected);
       setWarnings(res.warnings);
-      setWeekly(res.rows || []);
+      setWeekly(res.rows?.length ? res.rows : res.split?.weeks || []);
+      setSplit(res.rows?.length ? null : res.split || null);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -115,10 +118,12 @@ export default function UploadPage() {
     setSaved("");
     setWarnings([]);
     setWeekly([]);
+    setSplit(null);
     setError("");
   };
 
-  const canSave = !busy && validRange && vals.views !== "" && vals.followers !== "";
+  // Total Followers is optional: video-only exports have none — reports then use the last known total
+  const canSave = !busy && validRange && !longRange && vals.views !== "";
 
   const save = async () => {
     const row = { week: range.start, end: range.end, account, platform, sourceFiles: files.map((f) => f.name) };
@@ -141,7 +146,7 @@ export default function UploadPage() {
     try {
       const res = await saveRows(weekly);
       clear();
-      setSaved(`${res.saved} weekly rows saved ✓` + (res.errors.length ? ` · ${res.errors.length} skipped (${res.errors[0].message})` : ""));
+      setSaved(`${res.saved} week${res.saved === 1 ? "" : "s"} saved ✓` + (res.errors.length ? ` · ${res.errors.length} skipped (${res.errors[0].message})` : ""));
     } catch (err) {
       setError(err.message);
     } finally {
@@ -202,31 +207,56 @@ export default function UploadPage() {
 
           {weekly.length > 0 && (
             <div style={s.weekly}>
-              <div style={s.weeklyTitle}>{weekly.length} weekly rows found — saved as they are in the sheet</div>
+              <div style={s.weeklyTitle}>
+                {split
+                  ? `Split into ${weekly.length} full week${weekly.length === 1 ? "" : "s"} (Monday–Sunday) — each week is saved separately, so week and month comparisons stay correct`
+                  : `${weekly.length} weekly rows found — saved as they are in the sheet`}
+              </div>
               <div style={s.weeklyScroll}>
                 <table style={s.table}>
                   <thead>
-                    <tr>{["Week", "Account", "Platform", "Views", "Likes", "Followers"].map((h) => <th key={h} style={s.th}>{h}</th>)}</tr>
+                    <tr>
+                      {(split ? ["Week", "Views", "Reach", "Likes", "Comments", "Shares", "Followers", "Posts"] : ["Week", "Account", "Platform", "Views", "Likes", "Followers"]).map((h) => (
+                        <th key={h} style={s.th}>{h}</th>
+                      ))}
+                    </tr>
                   </thead>
                   <tbody>
                     {weekly.map((w) => (
                       <tr key={w.week + w.account + w.platform}>
                         <td style={s.td}>{fmtRange(w.week, w.end)}</td>
-                        <td style={s.td}>{w.account}</td>
-                        <td style={s.td}>{w.platform}</td>
-                        <td style={s.td}>{fmtFull(w.views)}</td>
-                        <td style={s.td}>{fmtFull(w.likes)}</td>
-                        <td style={s.td}>{fmtFull(w.followers)}</td>
+                        {split ? (
+                          ["views", "reach", "likes", "comments", "shares", "followers", "posts"].map((k) => (
+                            <td key={k} style={s.td}>{w[k] ? fmtFull(w[k]) : "–"}</td>
+                          ))
+                        ) : (
+                          <>
+                            <td style={s.td}>{w.account}</td>
+                            <td style={s.td}>{w.platform}</td>
+                            <td style={s.td}>{fmtFull(w.views)}</td>
+                            <td style={s.td}>{fmtFull(w.likes)}</td>
+                            <td style={s.td}>{fmtFull(w.followers)}</td>
+                          </>
+                        )}
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
+              {split?.skipped?.length > 0 && (
+                <div style={s.skipped}>
+                  Not saved (part weeks or dates the files don&apos;t fully cover): {split.skipped.map((k) => fmtRange(k.start, k.end)).join(" · ")}
+                </div>
+              )}
+              {weekly.some((w) => rows.some((r) => r.account === (w.account || account) && r.platform === (w.platform || platform) && r.week === w.week)) && (
+                <div style={s.skipped}>Weeks that are already saved will be replaced with these numbers.</div>
+              )}
               <button type="button" onClick={saveWeekly} disabled={busy} style={{ ...s.btn, marginTop: 12, ...(busy ? s.btnOff : {}) }}>
-                Save all {weekly.length} rows
+                {split ? `Save all ${weekly.length} weeks` : `Save all ${weekly.length} rows`}
               </button>
             </div>
           )}
+          {split && !weekly.length && <div style={s.skipped}>Nothing to save for these dates — see the note above.</div>}
         </Card>
 
         <Card title="3. Review the numbers" subtitle="Green fields came from your files — you can edit any number">
@@ -248,7 +278,7 @@ export default function UploadPage() {
                       m.key === "followers"
                         ? prevRow
                           ? `Previous total (${fmtRange(prevRow.week, prevRow.end)}): ${fmtFull(prevRow.followers)} · auto-filled from New Followers`
-                          : "No previous data — enter the total manually"
+                          : "Optional — leave 0 if this file has no followers; reports use the last known total"
                         : undefined
                     }
                   />
@@ -268,7 +298,13 @@ export default function UploadPage() {
               Save data
             </button>
           </div>
-          {!canSave && <div style={s.needs}>Valid dates, Views and Total Followers are required to save</div>}
+          {!canSave && !busy && (
+            <div style={s.needs}>
+              {longRange
+                ? "These dates are longer than a week — save the weekly split under step 2 (one entry per week)"
+                : "Valid dates and Views are required to save"}
+            </div>
+          )}
 
           {saved && (
             <div style={s.success}>
@@ -301,6 +337,7 @@ const s = {
   busy: { marginTop: 12, fontSize: 13, color: theme.primary, fontWeight: 600 },
   errorBox: { marginTop: 12, background: theme.redSoft, color: theme.red, padding: "10px 14px", borderRadius: 12, fontSize: 13, fontWeight: 600 },
   weekly: { marginTop: 18, paddingTop: 16, borderTop: `1px solid ${theme.border}` },
+  skipped: { fontSize: 12.5, color: theme.muted, marginTop: 10, lineHeight: 1.5 },
   weeklyTitle: { fontSize: 13, fontWeight: 700, color: theme.text, marginBottom: 10 },
   weeklyScroll: { overflowX: "auto", maxHeight: 260, overflowY: "auto" },
   table: { width: "100%", borderCollapse: "collapse", fontSize: 12.5 },

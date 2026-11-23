@@ -64,7 +64,8 @@ export default function ReportPage() {
   const mixed = Boolean(prev) && prevSource !== curSource;
   // when the two periods come from different sources, only compare numbers both of them have
   // (the sheet has no Reach / Comments / Shares… — that is not a −100% drop)
-  const usable = (k) => !mixed || (prevT[k] > 0 && curT[k] > 0);
+  // (total followers unknown on one side → skip it rather than show a fake −100%)
+  const usable = (k) => (k === "followers" ? prevT[k] > 0 && curT[k] > 0 : !mixed || (prevT[k] > 0 && curT[k] > 0));
   const onlyUsable = (t) => Object.fromEntries(Object.entries(t).map(([k, val]) => [k, usable(k) ? val : 0]));
 
   const present = METRICS.filter((m) => combo.some((r) => r[m.key] > 0));
