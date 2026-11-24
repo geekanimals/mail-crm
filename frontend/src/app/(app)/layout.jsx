@@ -4,7 +4,7 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
-import { LuBan, LuBell, LuBriefcase, LuCheck, LuFileSpreadsheet, LuKanban, LuNewspaper, LuLayoutDashboard, LuLogOut, LuMenu, LuReply, LuSend, LuSettings, LuTrendingUp, LuUserCog, LuUsers, LuX } from 'react-icons/lu';
+import { LuBan, LuBell, LuBriefcase, LuCheck, LuFileSpreadsheet, LuKanban, LuLightbulb, LuNewspaper, LuLayoutDashboard, LuLogOut, LuMenu, LuReply, LuSend, LuSettings, LuTrendingUp, LuUserCog, LuUsers, LuX } from 'react-icons/lu';
 import { api, getToken, setRole, setToken } from '@/lib/api';
 
 const ICON = process.env.NEXT_PUBLIC_LOGO_ICON_URL || '/fav.png'; // square logo (always shown)
@@ -19,6 +19,7 @@ const MENU = [
   ['/campaigns', 'Campaigns', LuSend],
   ['/replies', 'Replies', LuReply],
   ['/newsletter', 'Newsletter', LuNewspaper],
+  ['/ideas', 'Idea Bucket', LuLightbulb],
   ['/insights', 'Insights', LuTrendingUp], // social media Insights Dashboard (its own area)
   ['/settings', 'Settings', LuSettings],
 ];

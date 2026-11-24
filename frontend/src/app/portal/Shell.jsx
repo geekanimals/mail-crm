@@ -2,7 +2,7 @@
 // Employee portal frame: glass sidebar on desktop, top bar + bottom tab bar + slide-in menu on phones.
 import { useEffect, useState } from 'react';
 import {
-  LuBriefcase, LuCalendarDays, LuClock, LuEllipsis, LuFileText, LuFolder, LuLayoutDashboard, LuListChecks, LuLogOut, LuTarget, LuUser, LuWallet, LuX,
+  LuBriefcase, LuCalendarDays, LuClock, LuEllipsis, LuFileText, LuFolder, LuLayoutDashboard, LuLightbulb, LuListChecks, LuLogOut, LuTarget, LuUser, LuWallet, LuX,
 } from 'react-icons/lu';
 import { Avatar } from '@/lib/hr';
 
@@ -27,6 +27,7 @@ export const NAV = [
       ['documents', 'Documents', LuFolder, 'Your HR documents'],
       ['payslips', 'Payslips', LuWallet, 'Your salary slips'],
       ['profile', 'Profile', LuUser, 'Your details and password'],
+      ['ideas', 'Idea Bucket', LuLightbulb, 'Ideas and suggestions from the team'],
     ],
   },
 ];

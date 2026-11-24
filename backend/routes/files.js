@@ -18,7 +18,15 @@ const MAX = 10 * 1024 * 1024;
 const OK_EXT = /\.(pdf|png|jpe?g|webp|gif|heic|docx?|xlsx?|csv|pptx?|txt|zip)$/i;
 
 /** the employee a request may act for: themselves, or anyone (admin) */
-async function ownerFor(req, wanted, deal) {
+async function ownerFor(req, wanted, deal, idea) {
+  // an Idea Bucket attachment: the person who sent the idea, or the admin
+  if (idea) {
+    const i = mongoose.isValidObjectId(idea) ? await mongoose.model('Idea').findById(idea).select('author').lean() : null;
+    if (!i) throw fail(400, 'Idea not found');
+    const { who } = await import('./ideas.js');
+    if (req.role === 'admin' || i.author?.key === who(req).key) return i._id;
+    throw fail(403, 'Only the person who sent the idea can attach files');
+  }
   // a deal document (estimate, PO, invoice, report): the admin, or an employee with a task on that deal
   if (deal) {
     const d = mongoose.isValidObjectId(deal) ? await mongoose.model('Deal').findById(deal).select('_id').lean() : null;
@@ -34,6 +42,8 @@ async function ownerFor(req, wanted, deal) {
 /** admin: all. employee: their own files, and files of deals they work on. client: their deal's shared documents */
 async function mayRead(req, f) {
   if (req.role === 'admin') return true;
+  const idea = await mongoose.model('Idea').findById(f.owner).select('author').lean().catch(() => null);
+  if (idea) return (await import('./ideas.js')).canSee(req, idea);
   if (req.role === 'team' && String(f.owner) === String(req.account._id)) return true;
   const deal = await mongoose.model('Deal').findById(f.owner).select('company documents.file.id documents.emailedAt').lean().catch(() => null);
   if (!deal) return false;
@@ -45,7 +55,7 @@ async function mayRead(req, f) {
 router.post(
   '/',
   ah(async (req, res) => {
-    const owner = await ownerFor(req, req.body?.for, req.body?.deal);
+    const owner = await ownerFor(req, req.body?.for, req.body?.deal, req.body?.idea);
     const name = str(req.body?.name, 200).replace(/[\\/]/g, '_') || 'file';
     if (!OK_EXT.test(name)) throw fail(400, 'This file type is not allowed (use PDF, image, Word, Excel, PowerPoint, CSV, TXT or ZIP)');
     const data = str(req.body?.data, 15 * 1024 * 1024).replace(/^data:[^,]*,/, '');

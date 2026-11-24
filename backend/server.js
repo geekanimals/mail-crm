@@ -21,6 +21,7 @@ import hrRoutes from './routes/hr.js';
 import meRoutes from './routes/me.js';
 import fileRoutes from './routes/files.js';
 import dealRoutes from './routes/deals.js';
+import ideaRoutes from './routes/ideas.js';
 import newsletterRoutes from './routes/newsletter.js';
 import insightsRoutes, { ensureDefaultAccounts } from './insights/index.js';
 import { Company, Contact, Notification, Reply, getSetting, setSetting } from './models.js';
@@ -65,6 +66,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/portal', requireAuth, portalRoutes); // team members + clients
 app.use('/api/me', requireAuth, meRoutes); // employee portal (team members)
 app.use('/api/files', requireAuth, fileRoutes); // HR files: the admin, or the employee they belong to
+app.use('/api/ideas', requireAuth, ideaRoutes); // Idea Bucket: every login (who sees what is checked inside)
 app.use('/api/deals', requireAuth, dealRoutes); // client work after an account: admin + the employees on it
 app.use('/api/insights', requireAuth, insightsRoutes); // Insights Dashboard: admin + Insights logins (checked inside)
 const admin = [requireAuth, requireAdmin]; // everything else: admin only

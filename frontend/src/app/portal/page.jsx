@@ -8,6 +8,7 @@ import { LuCircleCheck, LuLogOut } from 'react-icons/lu';
 import { api, date, getToken, notify, setRole, setToken } from '@/lib/api';
 import { Attendance, Documents, Home, Leaves, PasswordForm, Payslips, Profile, Report, Targets, Tasks, emCss } from './Employee';
 import Shell from './Shell';
+import IdeaBucket from '@/lib/ideas';
 import { openFile } from '@/lib/hr';
 
 const LOGO = process.env.NEXT_PUBLIC_LOGO_ICON_URL || '/fav.png';
@@ -19,6 +20,7 @@ export default function PortalPage() {
   const [showDone, setShowDone] = useState(false);
   const [tab, setTab] = useState('home');
   const [pw, setPw] = useState(false); // client: change password box
+  const [ideas, setIdeas] = useState(false); // client: Idea Bucket
   const [toast, setToast] = useState(null);
 
   const load = useCallback(() => {
@@ -91,6 +93,7 @@ export default function PortalPage() {
           {tab === 'targets' && <Targets />}
           {tab === 'documents' && <Documents />}
           {tab === 'payslips' && <Payslips />}
+          {tab === 'ideas' && <IdeaBucket bare />}
           {tab === 'profile' && <Profile onPhoto={(photo) => setData((d) => ({ ...d, me: { ...d.me, photo } }))} />}
           {tab === 'accounts' && (
             <>
@@ -139,6 +142,7 @@ export default function PortalPage() {
           </div>
         </div>
         <div className="em-row">
+          {me?.role === 'client' && <button className="pt-btn ghost" onClick={() => setIdeas(!ideas)}>{ideas ? 'Back to my account' : 'Share an idea'}</button>}
           {me?.role === 'client' && <button className="pt-btn ghost" onClick={() => setPw(!pw)}>Change password</button>}
           <button className="pt-btn ghost" onClick={logout}><LuLogOut /> Log out</button>
         </div>
@@ -157,7 +161,8 @@ export default function PortalPage() {
         {data && !me.mustChangePassword && me.role === 'client' && pw && (
           <section className="pt-card"><h2>Change password</h2><PasswordForm onDone={() => setPw(false)} /></section>
         )}
-        {data && !me.mustChangePassword && me.role === 'client' && (!data.account ? (
+        {data && !me.mustChangePassword && me.role === 'client' && ideas && <IdeaBucket />}
+        {data && !me.mustChangePassword && me.role === 'client' && !ideas && (!data.account ? (
           <div className="pt-card pt-empty">Your account is being set up. Please check back soon.</div>
         ) : (
           <ClientView account={data.account} project={data.project} me={me.name} onSend={(text) => post(data.account._id, text)} />
