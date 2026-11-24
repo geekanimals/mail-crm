@@ -84,6 +84,12 @@ router.get(
     res.setHeader('Content-Type', f.type || 'application/octet-stream');
     res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(f.name)}"; filename*=UTF-8''${encodeURIComponent(f.name)}`);
     res.setHeader('X-Content-Type-Options', 'nosniff');
+    if (full.endsWith('.gz')) {
+      // kept compressed on disk (website resumes): unpack while sending
+      const { createReadStream } = await import('node:fs');
+      const { createGunzip } = await import('node:zlib');
+      return createReadStream(full).pipe(createGunzip()).on('error', () => res.destroy()).pipe(res);
+    }
     res.sendFile(full);
   })
 );

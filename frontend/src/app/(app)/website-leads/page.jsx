@@ -1,18 +1,21 @@
 'use client';
-// Website Leads (admin): every "Work with us" (client) form sent on geekcreativeagency.com.
-// The email still goes out as before; each lead is also here, and its company is a Hot lead in Pipeline,
-// so Aanchal gets "Reply and book a meeting" on her own. Track it here with a status and notes.
+// Website Leads (admin): every form sent on geekcreativeagency.com - client, creator, career, partner / vendor.
+// The email still goes out as before; each form is also here. A client lead's company is a Hot lead in Pipeline,
+// so Aanchal gets "Reply and book a meeting" on her own. Track each one here with a status and notes.
 import { useCallback, useEffect, useState } from 'react';
-import { LuChevronDown, LuChevronUp, LuGlobe, LuMail, LuPhone, LuSearch, LuTrash2 } from 'react-icons/lu';
+import { LuChevronDown, LuChevronUp, LuFileText, LuGlobe, LuMail, LuPhone, LuSearch, LuTrash2 } from 'react-icons/lu';
 import { api, date, notify } from '@/lib/api';
-import { ConfirmDialog } from '@/lib/hr';
+import { ConfirmDialog, openFile, sizeOf } from '@/lib/hr';
 
 const STAGE = { cold: 'Cold lead', hot: 'Hot lead', opportunity: 'Opportunity', account: 'Account', old_client: 'Old client' };
+const LONG = new Set(['goal', 'links', 'why', 'about']);
+const SUBJECT = { client: 'Your enquiry with Geek Creative Agency', creator: 'Creating with Geek', career: 'Your application to Geek', vendor: 'Partnering with Geek' };
 const when = (d) => (d ? new Date(d).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : '—');
 
 export default function WebsiteLeadsPage() {
   const [d, setD] = useState(null);
   const [status, setStatus] = useState('');
+  const [form, setForm] = useState('');
   const [q, setQ] = useState('');
   const [open, setOpen] = useState(null);
   const [note, setNote] = useState('');
@@ -20,8 +23,8 @@ export default function WebsiteLeadsPage() {
   const [ask, setAsk] = useState(null);
 
   const load = useCallback(
-    () => api('/api/website-leads', { query: { status, q } }).then(setD).catch((e) => notify(e.message, 'error')),
-    [status, q]
+    () => api('/api/website-leads', { query: { form, status, q } }).then(setD).catch((e) => notify(e.message, 'error')),
+    [form, status, q]
   );
   useEffect(() => {
     const t = setTimeout(load, q ? 300 : 0);
@@ -56,8 +59,8 @@ export default function WebsiteLeadsPage() {
   };
   const delNote = (l, n) => api(`/api/website-leads/${l._id}/notes/${n._id}`, { method: 'DELETE' }).then(update).catch((e) => notify(e.message, 'error'));
   const remove = (l) => setAsk({
-    title: `Delete the lead from ${l.name || l.email}?`,
-    text: 'It is removed from this list only. The company and the contact stay in Pipeline and Contacts.',
+    title: `Delete the ${l.formLabel.toLowerCase()} form from ${l.name || l.email}?`,
+    text: l.form === 'client' ? 'It is removed from this list only. The company and the contact stay in Pipeline and Contacts.' : 'It is removed from this list, with its resume if it has one.',
     confirm: 'Yes, delete',
     danger: true,
     run: async () => {
@@ -74,7 +77,7 @@ export default function WebsiteLeadsPage() {
       <div className="page-title">
         <div>
           <h1>Website Leads</h1>
-          <p>Every client form from geekcreativeagency.com. Each one is also a Hot lead in Pipeline, and Aanchal gets a task to reply and book a meeting.</p>
+          <p>Every form sent on geekcreativeagency.com. A client form is also a Hot lead in Pipeline, and Aanchal gets a task to reply and book a meeting.</p>
         </div>
       </div>
       {!d.ready && (
@@ -85,6 +88,14 @@ export default function WebsiteLeadsPage() {
       )}
 
       <div className="card">
+        <div className="wl-forms">
+          <button className={form === '' ? 'on' : ''} onClick={() => { setForm(''); setOpen(null); }}><b>{d.total}</b><span>All forms</span></button>
+          {d.forms.map((f) => (
+            <button key={f.key} className={form === f.key ? 'on' : ''} onClick={() => { setForm(f.key); setOpen(null); }}>
+              <b>{f.n}</b><span>{f.label}</span>{f.fresh > 0 && <i>{f.fresh} new</i>}
+            </button>
+          ))}
+        </div>
         <div className="wl-bar">
           <div className="tabs">
             <button className={status === '' ? 'on' : ''} onClick={() => setStatus('')}>All ({d.counts.all})</button>
@@ -95,7 +106,7 @@ export default function WebsiteLeadsPage() {
           <label className="wl-search"><LuSearch /><input placeholder="Search name, email, company, phone…" value={q} onChange={(e) => setQ(e.target.value)} /></label>
         </div>
 
-        {d.list.length === 0 && <p className="empty">{q || status ? 'No leads match.' : 'No website leads yet. They appear here as soon as someone sends the client form.'}</p>}
+        {d.list.length === 0 && <p className="empty">{q || status ? 'Nothing matches.' : 'Nothing yet. Forms appear here as soon as someone sends one on the website.'}</p>}
         {d.list.map((l) => {
           const isOpen = open === l._id;
           return (
@@ -103,10 +114,12 @@ export default function WebsiteLeadsPage() {
               <button type="button" className="wl-head" onClick={() => { setOpen(isOpen ? null : l._id); setNote(''); }} aria-expanded={isOpen}>
                 <div className="wl-who">
                   <b>{l.name || l.email}</b>
-                  <small>{[l.designation, l.company].filter(Boolean).join(' · ') || l.email}</small>
+                  <small>{[l.designation, l.company, l.fields.find((x) => x.k === 'position' || x.k === 'instagram' || x.k === 'service')?.v].filter(Boolean).join(' · ') || l.email}</small>
                 </div>
                 <div className="wl-tags">
+                  {!form && <span className={`wl-form f-${l.form}`}>{l.formLabel}</span>}
                   {l.budget && <span className="wl-chip">{l.budget}</span>}
+                  {l.resume && <span className="wl-chip">Resume</span>}
                   {l.stage && <span className={`wl-stage ${l.stage}`}>{STAGE[l.stage]}</span>}
                   {l.times > 1 && <span className="wl-chip">Sent {l.times} times</span>}
                   <span className={`wl-status ${l.status}`}>{l.statusLabel}</span>
@@ -118,19 +131,19 @@ export default function WebsiteLeadsPage() {
               {isOpen && (
                 <div className="wl-body">
                   <div className="wl-contact">
-                    <a href={`mailto:${l.email}?subject=${encodeURIComponent('Your enquiry with Geek Creative Agency')}`}><LuMail /> {l.email}</a>
+                    <a href={`mailto:${l.email}?subject=${encodeURIComponent(SUBJECT[l.form] || SUBJECT.client)}`}><LuMail /> {l.email}</a>
                     {l.phone && <a href={`tel:${l.phone.replace(/[^\d+]/g, '')}`}><LuPhone /> {l.phone}</a>}
                     {l.page && <a href={l.page} target="_blank" rel="noreferrer"><LuGlobe /> Form page</a>}
+                    {l.resume && <button type="button" className="wl-link" onClick={() => openFile(l.resume)}><LuFileText /> {l.resume.name} ({sizeOf(l.resume.size)})</button>}
                   </div>
                   <dl className="wl-grid">
-                    <div><dt>Company</dt><dd>{l.company || '—'}</dd></div>
-                    <div><dt>Designation</dt><dd>{l.designation || '—'}</dd></div>
-                    <div><dt>Budget</dt><dd>{l.budget || '—'}</dd></div>
-                    <div><dt>Timeline</dt><dd>{l.timeline || '—'}</dd></div>
+                    <div><dt>Form</dt><dd>{l.formLabel}</dd></div>
+                    {(l.company || l.form === 'client' || l.form === 'vendor') && <div><dt>Company</dt><dd>{l.company || '—'}</dd></div>}
+                    {l.fields.filter((x) => !LONG.has(x.k)).map((x) => <div key={x.k}><dt>{x.label}</dt><dd>{x.v}</dd></div>)}
                     <div><dt>First sent</dt><dd>{date(l.createdAt)}</dd></div>
-                    <div><dt>Pipeline</dt><dd>{l.stage ? STAGE[l.stage] : 'Not added'}</dd></div>
+                    {l.form === 'client' && <div><dt>Pipeline</dt><dd>{l.stage ? STAGE[l.stage] : 'Not added'}</dd></div>}
                   </dl>
-                  {l.goal && <div className="wl-goal"><dt>Goal</dt><p>{l.goal}</p></div>}
+                  {l.fields.filter((x) => LONG.has(x.k)).map((x) => <div key={x.k} className="wl-goal"><dt>{x.label}</dt><p>{x.v}</p></div>)}
 
                   {l.submissions.length > 1 && (
                     <details className="wl-subs">
@@ -138,8 +151,8 @@ export default function WebsiteLeadsPage() {
                       {[...l.submissions].reverse().map((s, i) => (
                         <div key={i} className="wl-sub">
                           <small className="muted">{when(s.at)}</small>
-                          <span>{[s.company, s.budget, s.timeline].filter(Boolean).join(' · ')}</span>
-                          {s.goal && <p>{s.goal}</p>}
+                          <span>{(s.fields?.length ? s.fields.filter((x) => !LONG.has(x.k)).map((x) => x.v) : [s.company, s.budget, s.timeline]).filter(Boolean).join(' · ')}</span>
+                          {(s.fields?.length ? s.fields.filter((x) => LONG.has(x.k)).map((x) => x.v).join('\n\n') : s.goal) && <p>{s.fields?.length ? s.fields.filter((x) => LONG.has(x.k)).map((x) => x.v).join('\n\n') : s.goal}</p>}
                         </div>
                       ))}
                     </details>
@@ -151,7 +164,7 @@ export default function WebsiteLeadsPage() {
                         {d.statuses.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
                       </select>
                     </label>
-                    <a className="btn ghost sm" href="/pipeline">Open Pipeline</a>
+                    {l.form === 'client' && <a className="btn ghost sm" href="/pipeline">Open Pipeline</a>}
                     <button type="button" className="btn red sm" onClick={() => remove(l)}><LuTrash2 /> Delete</button>
                   </div>
 
@@ -182,6 +195,19 @@ export default function WebsiteLeadsPage() {
 
 const css = `
 .wl-warn { display: flex; flex-direction: column; gap: 4px; border: 1px solid rgba(217,119,6,.3); background: #fffbeb; color: #92400e; }
+.wl-forms { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; margin-bottom: 14px; }
+.wl-forms button { position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 12px 14px; border-radius: 16px; border: 1px solid var(--c-100); background: rgba(255,255,255,.7); font: inherit; color: inherit; cursor: pointer; text-align: left; min-width: 0; transition: border-color .15s, box-shadow .15s; }
+.wl-forms button:hover { border-color: var(--c-200); }
+.wl-forms button.on { border-color: var(--c); box-shadow: 0 0 0 3px var(--c-100); background: #fff; }
+.wl-forms b { font-size: 20px; color: var(--c-700); }
+.wl-forms span { font-size: 12.5px; color: var(--muted); font-weight: 600; }
+.wl-forms i { position: absolute; top: 10px; right: 10px; font-style: normal; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 99px; background: #e0f2fe; color: #0369a1; }
+.wl-form { font-size: 11.5px; font-weight: 700; padding: 3px 9px; border-radius: 99px; background: #f1f5f9; color: #475569; }
+.wl-form.f-client { background: #fff1e6; color: #c2410c; }
+.wl-form.f-creator { background: #fce7f3; color: #be185d; }
+.wl-form.f-career { background: #ede9fe; color: #6d28d9; }
+.wl-form.f-vendor { background: #dcfce7; color: #15803d; }
+.wl-link { display: inline-flex; align-items: center; gap: 6px; background: none; border: 0; padding: 0; font: inherit; color: var(--c-700); font-weight: 600; font-size: 13.5px; cursor: pointer; overflow-wrap: anywhere; text-align: left; }
 .wl-bar { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
 .wl-bar .tabs { margin-bottom: 12px; }
 .wl-search { position: relative; flex: 0 1 300px; min-width: 200px; margin-bottom: 12px; }
@@ -226,7 +252,9 @@ const css = `
 .wl-x:hover { color: #e11d48; }
 .wl-add { display: flex; gap: 8px; margin-top: 10px; }
 .wl-add input { flex: 1; min-width: 0; }
+@media (max-width: 900px) { .wl-forms { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (max-width: 700px) {
+  .wl-forms { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .wl-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .wl-tags { justify-content: flex-start; }
   .wl-search { flex: 1 1 100%; }
