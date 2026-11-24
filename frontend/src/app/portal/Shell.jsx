@@ -2,7 +2,7 @@
 // Employee portal frame: glass sidebar on desktop, top bar + bottom tab bar + slide-in menu on phones.
 import { useEffect, useState } from 'react';
 import {
-  LuBriefcase, LuCalendarDays, LuClock, LuEllipsis, LuFileText, LuFolder, LuLayoutDashboard, LuLightbulb, LuListChecks, LuLogOut, LuTarget, LuUser, LuWallet, LuX,
+  LuBriefcase, LuCalendarDays, LuClock, LuEllipsis, LuFileText, LuFolder, LuGlobe, LuLayoutDashboard, LuLightbulb, LuListChecks, LuLogOut, LuTarget, LuUser, LuWallet, LuX,
 } from 'react-icons/lu';
 import { Avatar } from '@/lib/hr';
 
@@ -19,6 +19,7 @@ export const NAV = [
       ['report', 'Weekly report', LuFileText, 'Tell the team what you did this week'],
       ['targets', 'Targets', LuTarget, 'This month’s goals - tick them off'],
       ['accounts', 'Accounts', LuBriefcase, 'Client accounts you work on'],
+      ['forms', 'Website forms', LuGlobe, 'Forms from the website that you handle'],
     ],
   },
   {
@@ -34,9 +35,9 @@ export const NAV = [
 const ALL = NAV.flatMap((g) => g.items);
 const BOTTOM = ['home', 'tasks', 'attendance', 'leaves'];
 
-export default function Shell({ me, tab, setTab, hideAccounts, onLogout, children }) {
+export default function Shell({ me, tab, setTab, hideAccounts, showForms = false, onLogout, children }) {
   const [open, setOpen] = useState(false); // phone menu
-  const items = (list) => list.filter(([k]) => k !== 'accounts' || !hideAccounts);
+  const items = (list) => list.filter(([k]) => (k !== 'accounts' || !hideAccounts) && (k !== 'forms' || showForms));
   const current = ALL.find(([k]) => k === tab) || ALL[0];
   const go = (k) => {
     setTab(k);

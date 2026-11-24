@@ -12,7 +12,9 @@ import path from 'node:path';
 import zlib from 'node:zlib';
 import { Router } from 'express';
 import mongoose from 'mongoose';
-import { Company, Contact, Notification, bumpStage, upsertCompany } from '../models.js';
+import { Company, Contact, Notification, User, bumpStage, getSetting, setSetting, stageChanged, upsertCompany } from '../models.js';
+import { addDays } from '../hr-calc.js';
+import { today } from '../hr-util.js';
 import { HrFile, HrTask } from '../hr-models.js';
 import { UPLOAD_DIR, removeFile } from './files.js';
 import { stopAll } from '../worker.js';
@@ -21,8 +23,22 @@ import { ah, checkId, fail, str, validEmail } from '../utils.js';
 const { Schema, model } = mongoose;
 const id = Schema.Types.ObjectId;
 
-export const LEAD_STATUSES = ['new', 'contacted', 'converted', 'closed', 'spam'];
-const LABEL = { new: 'New', contacted: 'Contacted', converted: 'Converted', closed: 'Closed', spam: 'Spam' };
+// each form has its own statuses; the last ones of a form are "finished" (its task is closed)
+const LABEL = {
+  new: 'New', contacted: 'Contacted', converted: 'Converted', closed: 'Closed', spam: 'Spam',
+  shortlisted: 'Shortlisted', interview: 'Interview', hired: 'Hired', rejected: 'Rejected',
+  onboarded: 'Onboarded', notfit: 'Not a fit', partnered: 'Partnered',
+  // client forms follow the company's Pipeline stage
+  hot: 'Hot lead', opportunity: 'Opportunity', account: 'Account', old_client: 'Old client', cold: 'Cold (not now)',
+};
+export const LEAD_STATUSES = Object.keys(LABEL);
+const STATUS_BY_FORM = {
+  client: ['hot', 'opportunity', 'account', 'old_client', 'cold', 'spam'], // = Pipeline stage (spam: only here)
+  career: ['new', 'shortlisted', 'interview', 'hired', 'rejected', 'spam'],
+  creator: ['new', 'shortlisted', 'onboarded', 'notfit', 'spam'],
+  vendor: ['new', 'contacted', 'partnered', 'notfit', 'spam'],
+};
+const FINISHED = new Set(['converted', 'closed', 'spam', 'hired', 'rejected', 'onboarded', 'notfit', 'partnered']);
 export const FORMS = ['client', 'creator', 'career', 'vendor'];
 const FORM_LABEL = { client: 'Client', creator: 'Creator', career: 'Career', vendor: 'Partner / vendor' };
 // the fields each form sends, in the order they are shown (name / email / phone / company are kept on their own)
@@ -176,6 +192,47 @@ async function toPipeline(f) {
   return { contact, company };
 }
 
+/* ---------------- who handles each form (the admin picks an employee; client forms follow the lifecycle) ---------------- */
+
+const OWNED = ['career', 'creator', 'vendor'];
+const owners = async () => ({ ...(await getSetting('websiteFormOwners', {})) });
+/** the forms this login may see: admin all, an employee the forms the admin gave them */
+async function allowedForms(req) {
+  if (req.role === 'admin') return FORMS;
+  if (req.role !== 'team') return [];
+  const o = await owners();
+  return OWNED.filter((k) => String(o[k] || '') === String(req.account._id));
+}
+const whoName = (req) => (req.role === 'admin' ? 'Admin' : req.account?.name || 'Team');
+
+/** a task for the employee who handles this form (one open task per entry) */
+async function ownerTask(lead) {
+  const ownerId = (await owners())[lead.form];
+  if (!ownerId || !(await User.exists({ _id: ownerId, role: 'team', active: { $ne: false } }))) return;
+  if (await HrTask.exists({ websiteLead: lead._id, status: { $ne: 'done' } })) return;
+  const lines = [
+    `${FORM_LABEL[lead.form]} form from the website`,
+    lead.name && `Name: ${lead.name}`,
+    `Email: ${lead.email}`,
+    lead.phone && `Phone: ${lead.phone}`,
+    lead.company && `Company: ${lead.company}`,
+    ...(lead.fields || []).map((x) => `${x.label}: ${x.v}`),
+    lead.resume?.id && 'Resume: attached (download it under Website forms)',
+    '',
+    'Open it under Website forms in your portal, update its status and add notes.',
+  ].filter((x) => typeof x === 'string');
+  await HrTask.create({
+    user: ownerId,
+    title: `${FORM_LABEL[lead.form]} form – ${lead.name || lead.email}`,
+    details: lines.join('\n').slice(0, 4000),
+    due: addDays(today(), 2),
+    priority: 'normal',
+    step: 'website_form',
+    websiteLead: lead._id,
+  });
+}
+const closeOwnerTask = (lead) => HrTask.updateMany({ websiteLead: lead._id, status: { $ne: 'done' } }, { $set: { status: 'done', doneAt: new Date() } });
+
 export const hook = Router();
 hook.post(
   '/',
@@ -196,7 +253,7 @@ hook.post(
       if (f.fields.length) lead.fields = f.fields;
       const what = f.goal || f.fields.find((x) => LONG.has(x.k))?.v || '';
       lead.notes.push({ by: 'Website', text: `Sent the form again${what ? `: ${what.slice(0, 300)}` : ''}` });
-      if (['closed', 'spam'].includes(lead.status)) lead.status = 'new';
+      if (['closed', 'spam', 'rejected', 'notfit'].includes(lead.status)) lead.status = 'new'; // came back after being closed: look at it again
     } else {
       try {
         lead = new WebsiteLead({ ...f, submissions: [sub], lastAt: at });
@@ -231,6 +288,7 @@ hook.post(
       }
     }
     await lead.save();
+    if (f.form !== 'client') await ownerTask(lead).catch((e) => console.error('[website-lead] task:', e.message));
 
     const label = FORM_LABEL[f.form];
     await Notification.create({
@@ -243,8 +301,10 @@ hook.post(
   })
 );
 
-/* ---------------- the admin's page ---------------- */
+/* ---------------- the pages: admin (every form) and the employee who handles a form ---------------- */
 
+/** a client lead's status is its company's Pipeline stage (or Spam); other forms keep their own status */
+const clientStatus = (l) => ((l.form || 'client') !== 'client' ? l.status : l.status === 'spam' ? 'spam' : l.stage || 'hot');
 const shape = (l) => ({
   _id: l._id,
   form: l.form || 'client',
@@ -260,8 +320,8 @@ const shape = (l) => ({
   timeline: l.timeline,
   goal: l.goal,
   page: l.page,
-  status: l.status,
-  statusLabel: LABEL[l.status],
+  status: clientStatus(l),
+  statusLabel: LABEL[clientStatus(l)] || l.status,
   times: l.times,
   lastAt: l.lastAt,
   createdAt: l.createdAt,
@@ -276,41 +336,137 @@ async function withStage(list) {
   const stages = Object.fromEntries((await Company.find({ _id: { $in: ids } }).select('stage').lean()).map((c) => [String(c._id), c.stage]));
   return list.map((l) => shape({ ...l, stage: l.companyId ? stages[String(l.companyId)] || '' : '' }));
 }
+const formMatch = (k) => (k === 'client' ? { $in: ['client', null] } : k);
 
 export const admin = Router();
+
+// which forms this login handles (the employee portal shows "Website forms" only when there are some)
+admin.get(
+  '/mine',
+  ah(async (req, res) => {
+    const forms = await allowedForms(req);
+    const others = forms.filter((k) => k !== 'client');
+    const fresh = others.length ? await WebsiteLead.aggregate([{ $match: { form: { $in: others }, status: 'new' } }, { $group: { _id: '$form', n: { $sum: 1 } } }]) : [];
+    const by = Object.fromEntries(fresh.map((c) => [c._id, c.n]));
+    if (forms.includes('client')) {
+      // client: still a Hot lead (waiting for the meeting)
+      const ids = await WebsiteLead.distinct('companyId', { form: formMatch('client'), status: { $ne: 'spam' }, companyId: { $exists: true } });
+      by.client = await Company.countDocuments({ _id: { $in: ids }, stage: 'hot' });
+    }
+    res.json({ forms: forms.map((k) => ({ key: k, label: FORM_LABEL[k], fresh: by[k] || 0 })) });
+  })
+);
+
+// admin: the employee who handles each form
+admin.get(
+  '/owners',
+  ah(async (req, res) => {
+    if (req.role !== 'admin') throw fail(403, 'Only the admin can do this');
+    const [o, team] = await Promise.all([owners(), User.find({ role: 'team', active: { $ne: false } }).select('name').sort({ name: 1 }).lean()]);
+    res.json({ owners: Object.fromEntries(OWNED.map((k) => [k, o[k] ? String(o[k]) : ''])), team: team.map((u) => ({ _id: u._id, name: u.name })) });
+  })
+);
+admin.put(
+  '/owners',
+  ah(async (req, res) => {
+    if (req.role !== 'admin') throw fail(403, 'Only the admin can do this');
+    const o = await owners();
+    for (const k of OWNED) {
+      if (req.body?.[k] === undefined) continue;
+      const v = str(req.body[k], 40);
+      if (v && !(mongoose.isValidObjectId(v) && (await User.exists({ _id: v, role: 'team' })))) throw fail(400, 'Choose an employee from the list');
+      if (String(o[k] || '') !== v) {
+        // hand the open tasks of this form to the new person (or close them when nobody handles it)
+        const open = await WebsiteLead.find({ form: k }).select('_id').lean();
+        const ids = open.map((x) => x._id);
+        if (v) await HrTask.updateMany({ websiteLead: { $in: ids }, status: { $ne: 'done' } }, { $set: { user: v } });
+        else await HrTask.updateMany({ websiteLead: { $in: ids }, status: { $ne: 'done' } }, { $set: { status: 'done', doneAt: new Date() } });
+      }
+      o[k] = v;
+    }
+    await setSetting('websiteFormOwners', o);
+    res.json({ owners: Object.fromEntries(OWNED.map((k) => [k, o[k] || ''])) });
+  })
+);
+
 admin.get(
   '/',
   ah(async (req, res) => {
-    const base = {};
-    if (FORMS.includes(req.query.form)) base.form = req.query.form === 'client' ? { $in: ['client', null] } : req.query.form;
+    const allowed = await allowedForms(req);
+    if (!allowed.length) throw fail(403, 'No website forms are given to you');
+    const form = allowed.includes(req.query.form) ? req.query.form : allowed[0];
+    const base = { form: formMatch(form) };
     const filter = { ...base };
-    if (LEAD_STATUSES.includes(req.query.status)) filter.status = req.query.status;
+    if (form !== 'client' && STATUS_BY_FORM[form].includes(req.query.status)) filter.status = req.query.status;
     const q = str(req.query.q, 100);
     if (q) {
       const rx = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
       filter.$or = [{ name: rx }, { email: rx }, { company: rx }, { phone: rx }, { goal: rx }, { 'fields.v': rx }];
     }
-    const [list, counts, forms] = await Promise.all([
-      WebsiteLead.find(filter).sort({ lastAt: -1 }).limit(300).lean(),
-      WebsiteLead.aggregate([{ $match: base }, { $group: { _id: '$status', n: { $sum: 1 } } }]),
-      WebsiteLead.aggregate([{ $group: { _id: { $ifNull: ['$form', 'client'] }, n: { $sum: 1 }, fresh: { $sum: { $cond: [{ $eq: ['$status', 'new'] }, 1, 0] } } } }]),
-    ]);
-    const by = Object.fromEntries(counts.map((c) => [c._id, c.n]));
-    const byForm = Object.fromEntries(forms.map((c) => [c._id, c]));
+    let list;
+    let by;
+    if (form === 'client') {
+      // status = Pipeline stage: work it out for every client lead, then filter
+      const all = await withStage(await WebsiteLead.find(filter).sort({ lastAt: -1 }).limit(1000).lean());
+      const allForCount = q ? await withStage(await WebsiteLead.find(base).select('status companyId form').lean()) : all;
+      by = {};
+      for (const l of allForCount) by[l.status] = (by[l.status] || 0) + 1;
+      list = (STATUS_BY_FORM.client.includes(req.query.status) ? all.filter((l) => l.status === req.query.status) : all).slice(0, 300);
+    } else {
+      const [found, counts] = await Promise.all([
+        WebsiteLead.find(filter).sort({ lastAt: -1 }).limit(300).lean(),
+        WebsiteLead.aggregate([{ $match: base }, { $group: { _id: '$status', n: { $sum: 1 } } }]),
+      ]);
+      list = await withStage(found);
+      by = Object.fromEntries(counts.map((c) => [c._id, c.n]));
+    }
+    const o = await owners();
+    const ownerName = OWNED.includes(form) && o[form] ? (await User.findById(o[form]).select('name').lean())?.name || '' : '';
     res.json({
-      list: await withStage(list),
-      counts: { all: counts.reduce((n, c) => n + c.n, 0), ...Object.fromEntries(LEAD_STATUSES.map((s) => [s, by[s] || 0])) },
-      statuses: LEAD_STATUSES.map((k) => ({ key: k, label: LABEL[k] })),
-      forms: FORMS.map((k) => ({ key: k, label: FORM_LABEL[k], n: byForm[k]?.n || 0, fresh: byForm[k]?.fresh || 0 })),
-      total: forms.reduce((n, c) => n + c.n, 0),
+      form,
+      formLabel: FORM_LABEL[form],
+      list,
+      counts: { all: Object.values(by).reduce((n, c) => n + c, 0), ...Object.fromEntries(STATUS_BY_FORM[form].map((s) => [s, by[s] || 0])) },
+      statuses: STATUS_BY_FORM[form].map((k) => ({ key: k, label: LABEL[k] })),
+      owner: OWNED.includes(form) ? { id: o[form] ? String(o[form]) : '', name: ownerName } : null,
+      isAdmin: req.role === 'admin',
       ready: String(process.env.WEBSITE_LEAD_SECRET || '').trim().length >= 16,
     });
   })
 );
 
+/** client lead: move its company in Pipeline (same rules as Pipeline), or mark it Spam */
+async function setClientStage(req, l, to) {
+  const c = l.companyId ? await Company.findById(l.companyId) : null;
+  const before = l.status === 'spam' ? 'spam' : c?.stage || 'hot';
+  if (before === to) return;
+  if (to === 'spam') {
+    l.status = 'spam';
+    if (c && ['hot', 'opportunity'].includes(c.stage)) {
+      const from = c.stage;
+      c.stage = 'cold'; // out of the active Pipeline: Aanchal's open meeting / contract task closes
+      await c.save();
+      await stageChanged(c, from, 'cold');
+    }
+  } else {
+    if (!c) throw fail(400, 'This lead is not in Pipeline (its company was deleted). Add it in Pipeline first.');
+    if (to === 'account' && c.stage !== 'account') throw fail(400, 'To make it an account, use "Convert to account" in Pipeline. That also makes the client login.');
+    l.status = 'new';
+    if (c.stage !== to) {
+      const from = c.stage;
+      c.stage = to;
+      await c.save();
+      await stageChanged(c, from, to); // the lifecycle hands out the tasks (meeting, contract, deal)
+    }
+  }
+  l.notes.push({ by: whoName(req), text: `Status: ${LABEL[before]} → ${LABEL[to]}${to !== 'spam' ? ' (Pipeline updated)' : ''}` });
+  await l.save();
+}
+
+/** an entry this login may work on */
 const one = async (req) => {
   const l = await WebsiteLead.findById(checkId(req.params.id));
-  if (!l) throw fail(404, 'Lead not found');
+  if (!l || !(await allowedForms(req)).includes(l.form || 'client')) throw fail(404, 'Not found');
   return l;
 };
 const reply = async (res, l) => res.json((await withStage([l.toObject()]))[0]);
@@ -319,11 +475,17 @@ admin.put(
   '/:id',
   ah(async (req, res) => {
     const l = await one(req);
-    if (!LEAD_STATUSES.includes(req.body?.status)) throw fail(400, 'Unknown status');
+    const form = l.form || 'client';
+    if (!STATUS_BY_FORM[form].includes(req.body?.status)) throw fail(400, 'Unknown status');
+    if (form === 'client') {
+      await setClientStage(req, l, req.body.status);
+      return reply(res, l);
+    }
     if (l.status !== req.body.status) {
-      l.notes.push({ by: 'Admin', text: `Status: ${LABEL[l.status]} → ${LABEL[req.body.status]}` });
+      l.notes.push({ by: whoName(req), text: `Status: ${LABEL[l.status] || l.status} → ${LABEL[req.body.status]}` });
       l.status = req.body.status;
       await l.save();
+      if (form !== 'client' && FINISHED.has(l.status)) await closeOwnerTask(l);
     }
     await reply(res, l);
   })
@@ -335,7 +497,7 @@ admin.post(
     const l = await one(req);
     const text = str(req.body?.text, 2000);
     if (!text) throw fail(400, 'Write a note');
-    l.notes.push({ by: 'Admin', text });
+    l.notes.push({ by: whoName(req), text });
     await l.save();
     await reply(res, l);
   })
@@ -347,19 +509,28 @@ admin.delete(
     const l = await one(req);
     const n = l.notes.id(req.params.nid);
     if (!n) throw fail(404, 'Note not found');
+    if (req.role !== 'admin' && n.by !== whoName(req)) throw fail(403, 'You can delete only your own note');
     n.deleteOne();
     await l.save();
     await reply(res, l);
   })
 );
 
-// removes the entry (and its resume) from this list; a client lead's company and contact stay in Pipeline
+// admin only: removes the entry (its resume and open task too); a client lead's company and contact stay in Pipeline
 admin.delete(
   '/:id',
   ah(async (req, res) => {
+    if (req.role !== 'admin') throw fail(403, 'Only the admin can delete');
     const l = await one(req);
     for (const f of await HrFile.find({ owner: l._id }).select('_id').lean()) await removeFile(String(f._id));
+    await HrTask.deleteMany({ websiteLead: l._id, status: { $ne: 'done' } });
     await l.deleteOne();
     res.json({ ok: true });
   })
 );
+
+/** may this employee download this file? (a resume of a form they handle) */
+export async function teamMayReadLeadFile(req, ownerId) {
+  const l = await WebsiteLead.findById(ownerId).select('form').lean().catch(() => null);
+  return Boolean(l && (await allowedForms(req)).includes(l.form || 'client'));
+}

@@ -78,7 +78,7 @@ app.use('/api/companies', ...admin, companyRoutes);
 app.use('/api/team', ...admin, teamRoutes);
 app.use('/api/hr', ...admin, hrRoutes);
 app.use('/api/newsletter', ...admin, newsletterRoutes);
-app.use('/api/website-leads', ...admin, websiteLeadRoutes);
+app.use('/api/website-leads', requireAuth, websiteLeadRoutes); // admin: every form; an employee: the forms given to them (checked inside)
 app.use('/api', ...admin, dashboardRoutes);
 
 app.use((_req, res) => res.status(404).json({ error: 'Not found' }));

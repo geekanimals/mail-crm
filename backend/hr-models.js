@@ -84,6 +84,7 @@ export const HrTask = model(
       step: { type: String, default: null, index: true },
       company: { type: id, ref: 'Company', index: true },
       deal: { type: id, ref: 'Deal', index: true },
+      websiteLead: { type: id, ref: 'WebsiteLead', index: true }, // a website form the employee handles
     },
     { timestamps: true }
   )

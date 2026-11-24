@@ -45,6 +45,7 @@ async function mayRead(req, f) {
   const idea = await mongoose.model('Idea').findById(f.owner).select('author').lean().catch(() => null);
   if (idea) return (await import('./ideas.js')).canSee(req, idea);
   if (req.role === 'team' && String(f.owner) === String(req.account._id)) return true;
+  if (req.role === 'team' && (await (await import('./website-leads.js')).teamMayReadLeadFile(req, f.owner))) return true; // resume of a form they handle
   const deal = await mongoose.model('Deal').findById(f.owner).select('company documents.file.id documents.emailedAt').lean().catch(() => null);
   if (!deal) return false;
   if (req.role === 'team') return Boolean(await HrTask.exists({ deal: deal._id, user: req.account._id }));

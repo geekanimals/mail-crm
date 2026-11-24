@@ -4,11 +4,13 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
-import { LuBan, LuBell, LuBriefcase, LuCheck, LuFileSpreadsheet, LuGlobe, LuKanban, LuLightbulb, LuNewspaper, LuLayoutDashboard, LuLogOut, LuMenu, LuReply, LuSend, LuSettings, LuTrendingUp, LuUserCog, LuUsers, LuX } from 'react-icons/lu';
+import { LuBan, LuBell, LuBriefcase, LuCheck, LuFileSpreadsheet, LuFileUser, LuGlobe, LuHandshake, LuKanban, LuSparkles, LuLightbulb, LuNewspaper, LuLayoutDashboard, LuLogOut, LuMenu, LuReply, LuSend, LuSettings, LuTrendingUp, LuUserCog, LuUsers, LuX } from 'react-icons/lu';
 import { api, getToken, setRole, setToken } from '@/lib/api';
 
 const ICON = process.env.NEXT_PUBLIC_LOGO_ICON_URL || '/fav.png'; // square logo (always shown)
 const WORDMARK = process.env.NEXT_PUBLIC_BRAND_LOGO_URL || '/logo.png'; // brand name, next to the logo when the sidebar opens
+// which admin page each website form lives on
+const FORM_PAGE = { client: '/website-leads', career: '/job-applications', creator: '/creators', vendor: '/partners' };
 const MENU = [
   ['/', 'Dashboard', LuLayoutDashboard],
   ['/contacts', 'Contacts', LuUsers],
@@ -19,6 +21,9 @@ const MENU = [
   ['/campaigns', 'Campaigns', LuSend],
   ['/replies', 'Replies', LuReply],
   ['/website-leads', 'Website Leads', LuGlobe],
+  ['/job-applications', 'Job Applications', LuFileUser],
+  ['/creators', 'Creators', LuSparkles],
+  ['/partners', 'Partners', LuHandshake],
   ['/newsletter', 'Newsletter', LuNewspaper],
   ['/ideas', 'Idea Bucket', LuLightbulb],
   ['/insights', 'Insights', LuTrendingUp], // social media Insights Dashboard (its own area)
@@ -32,6 +37,7 @@ export default function AppLayout({ children }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [toast, setToast] = useState(null);
   const [unread, setUnread] = useState(0);
+  const [formNew, setFormNew] = useState({}); // new website forms per page
   const [bellOpen, setBellOpen] = useState(false);
   const [notes, setNotes] = useState(null);
   const [noteCount, setNoteCount] = useState(0);
@@ -58,6 +64,7 @@ export default function AppLayout({ children }) {
     const refresh = () => {
       api('/api/settings').then((s) => setUnread(s.unhandled || 0)).catch(() => {});
       api('/api/notifications').then((n) => setNoteCount(n.unread || 0)).catch(() => {});
+      api('/api/website-leads/mine').then((r) => setFormNew(Object.fromEntries(r.forms.map((f) => [FORM_PAGE[f.key], f.fresh])))).catch(() => {});
     };
     refresh();
     const timer = setInterval(refresh, 60000);
@@ -116,7 +123,10 @@ export default function AppLayout({ children }) {
       case 'replied': return { icon: LuReply, title: `${who} replied`, href: '/replies', extra: 'Follow-ups stopped' };
       case 'unsubscribed': return { icon: LuBan, title: `${who} unsubscribed`, href: '/contacts', extra: 'Will never be emailed again' };
       case 'bounced': return { icon: LuX, title: `Email to ${who} bounced`, href: '/contacts', extra: 'Address blocked' };
-      case 'website': return { icon: LuGlobe, title: `${who} sent the website form`, href: '/website-leads', extra: 'Hot lead · meeting task for Aanchal' };
+      case 'website': {
+        const page = /career/i.test(n.text || '') ? '/job-applications' : /creator/i.test(n.text || '') ? '/creators' : /partner/i.test(n.text || '') ? '/partners' : '/website-leads';
+        return { icon: LuGlobe, title: `${who} sent a website form`, href: page, extra: 'Website form' };
+      }
       default: return { icon: LuX, title: `Couldn't send ${step(n.step).toLowerCase()} to ${who}`, href: n.campaign ? `/campaigns?open=${n.campaign._id}` : '/settings' };
     }
   };
@@ -161,6 +171,7 @@ export default function AppLayout({ children }) {
               <span className="nav-ico"><Icon /></span>
               <span className="nav-label">{label}</span>
               {href === '/replies' && unread > 0 && <em className="nav-badge">{unread}</em>}
+              {formNew[href] > 0 && <em className="nav-badge">{formNew[href]}</em>}
             </Link>
           ))}
         </nav>
