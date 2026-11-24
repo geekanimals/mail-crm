@@ -13,7 +13,7 @@ import PeriodColumns from "@/components/insights/PeriodColumns";
 import Findings from "@/components/insights/Findings";
 import { useData } from "@/components/insights/DataProvider";
 import { change, endOf, engagementRate, listPeriods, periodTotals } from "@/lib/insights/calc";
-import { PLATFORMS, PLATFORM_COLORS, METRICS, metricOf, theme } from "@/lib/insights/constants";
+import { PLATFORMS, PLATFORM_COLORS, metricFor, metricsFor, theme } from "@/lib/insights/constants";
 import { fmtDate, fmtRange, fmtValue } from "@/lib/insights/format";
 import { PLATFORM_TIPS, diagnose } from "@/lib/insights/diagnose";
 import { useScreen } from "@/lib/insights/useScreen";
@@ -68,10 +68,10 @@ export default function ReportPage() {
   const usable = (k) => (k === "followers" ? prevT[k] > 0 && curT[k] > 0 : !mixed || (prevT[k] > 0 && curT[k] > 0));
   const onlyUsable = (t) => Object.fromEntries(Object.entries(t).map(([k, val]) => [k, usable(k) ? val : 0]));
 
-  const present = METRICS.filter((m) => combo.some((r) => r[m.key] > 0));
+  const present = metricsFor(platform).filter((m) => combo.some((r) => r[m.key] > 0));
   const compared = present.filter((m) => usable(m.key));
   const metric = present.some((m) => m.key === metricPick) ? metricPick : present[0]?.key || "views";
-  const report = prev ? diagnose(onlyUsable(prevT), onlyUsable(curT), mode) : null;
+  const report = prev ? diagnose(onlyUsable(prevT), onlyUsable(curT), mode, platform) : null;
 
   // latest period anyone uploaded for this company — warn if this platform is behind
   const latestForCompany = listPeriods(own, mode).at(-1);
@@ -234,7 +234,7 @@ export default function ReportPage() {
 
       {/* 4. week by week */}
       <Card
-        title={`${metricOf(metric)?.full} — ${word} by ${word}`}
+        title={`${metricFor(metric, platform)?.full} — ${word} by ${word}`}
         subtitle={`Every bar is one ${word}. Green = went up from the ${word} before, red = dropped. Outlined bars are the two being compared.`}
         right={<Select value={metric} onChange={setMetric} options={present.map((m) => ({ value: m.key, label: m.full }))} />}
         style={{ margin: "18px 0" }}

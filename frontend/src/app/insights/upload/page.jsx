@@ -13,7 +13,7 @@ import NumberField from "@/components/insights/NumberField";
 import { useData } from "@/components/insights/DataProvider";
 import { api } from "@/lib/insights/api";
 import { daysBetween, presets, todayISO } from "@/lib/insights/dates";
-import { DEFAULT_ACCOUNTS, METRICS, PLATFORMS, PLATFORM_COLORS, metricOf, theme } from "@/lib/insights/constants";
+import { DEFAULT_ACCOUNTS, METRICS, PLATFORMS, PLATFORM_COLORS, metricFor, metricsFor, theme } from "@/lib/insights/constants";
 import { fmtFull, fmtRange } from "@/lib/insights/format";
 
 const EMPTY = Object.fromEntries(METRICS.map((m) => [m.key, ""]));
@@ -29,7 +29,7 @@ const HELP = {
   Instagram: "Meta Business Suite → Insights → Export (Instagram): Views, Reach, Interactions, Follows, Visits, Link clicks",
   LinkedIn: "Company page: Analytics → Export (.xls). Personal profile: Analytics → Export (AggregateAnalytics .xlsx)",
   "X / Twitter": "Drop the weekly summary sheet (Week starting, Platform, Account, Views, Likes, Followers) — every week in it is saved — or type the numbers",
-  YouTube: "YouTube Studio → Analytics → Advanced mode → Export (Table data + Totals)",
+  YouTube: "YouTube Studio → Analytics → Advanced mode → Export (Table data + Totals). New Subscribers = Subscribers gained − lost from Table data",
 };
 
 export default function UploadPage() {
@@ -74,7 +74,12 @@ export default function UploadPage() {
         res.report.map((f) => ({
           name: f.name,
           ok: f.ok,
-          msg: (f.format ? f.format + " · " : "") + (f.found.length ? "Found: " + f.found.map((k) => metricOf(k)?.label || k).join(", ") : f.message),
+          // e.g. "Meta Insights (daily) · Views 1,68,948" — what each file gave for the chosen dates
+          msg:
+            (f.format ? f.format + " · " : "") +
+            (f.found.length
+              ? f.found.map((k) => `${metricFor(k, platform)?.label || k} ${res.values[k] !== undefined ? fmtFull(res.values[k]) : ""}`.trim()).join(", ")
+              : f.message),
         }))
       );
       setDetected(res.detected);
@@ -124,6 +129,7 @@ export default function UploadPage() {
 
   // Total Followers is optional: video-only exports have none — reports then use the last known total
   const canSave = !busy && validRange && !longRange && vals.views !== "";
+  const fans = platform === "YouTube" ? "Subscribers" : "Followers"; // YouTube says subscribers
 
   const save = async () => {
     const row = { week: range.start, end: range.end, account, platform, sourceFiles: files.map((f) => f.name) };
@@ -216,7 +222,7 @@ export default function UploadPage() {
                 <table style={s.table}>
                   <thead>
                     <tr>
-                      {(split ? ["Week", "Views", "Reach", "Likes", "Comments", "Shares", "Followers", "Posts"] : ["Week", "Account", "Platform", "Views", "Likes", "Followers"]).map((h) => (
+                      {(split ? ["Week", "Views", "Reach", "Likes", "Comments", "Shares", fans, "Posts"] : ["Week", "Account", "Platform", "Views", "Likes", "Followers"]).map((h) => (
                         <th key={h} style={s.th}>{h}</th>
                       ))}
                     </tr>
@@ -264,7 +270,7 @@ export default function UploadPage() {
             <div key={g} style={s.group}>
               <div style={s.groupTitle}>{g}</div>
               <div style={s.fields}>
-                {METRICS.filter((m) => m.group === g).map((m) => (
+                {metricsFor(platform).filter((m) => m.group === g).map((m) => (
                   <NumberField
                     key={m.key}
                     label={m.full}
@@ -277,8 +283,8 @@ export default function UploadPage() {
                     hint={
                       m.key === "followers"
                         ? prevRow
-                          ? `Previous total (${fmtRange(prevRow.week, prevRow.end)}): ${fmtFull(prevRow.followers)} · auto-filled from New Followers`
-                          : "Optional — leave 0 if this file has no followers; reports use the last known total"
+                          ? `Previous total (${fmtRange(prevRow.week, prevRow.end)}): ${fmtFull(prevRow.followers)} · auto-filled from New ${fans}`
+                          : `Optional — leave 0 if this file has no ${fans.toLowerCase()}; reports use the last known total`
                         : undefined
                     }
                   />

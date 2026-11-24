@@ -42,7 +42,8 @@ export const PLATFORM_TIPS = {
  * prev / cur: totals for the two periods. period: "week" | "month".
  * Returns { verdict: "up" | "down" | "mixed" | "steady", headline, findings: [{ tone, title, why, todo }] }
  */
-export function diagnose(prev, cur, period = "week") {
+export function diagnose(prev, cur, period = "week", platform = "") {
+  const yt = platform === "YouTube"; // YouTube says subscribers, not followers
   const p = (k) => change(prev[k], cur[k]);
   const moved = (k) => prev[k] > 0 && Math.abs(p(k)) >= BIG;
   const up = (k) => moved(k) && p(k) > 0;
@@ -142,19 +143,22 @@ export function diagnose(prev, cur, period = "week") {
   }
 
   // ---- Audience: followers, visits, link clicks ----
+  const fans = yt ? "subscribers" : "followers";
   if (down("newFollowers")) {
     findings.push({
       tone: "down",
-      title: `Fewer new followers ${pct(p("newFollowers"))} (${fmt(prev.newFollowers)} → ${fmt(cur.newFollowers)})`,
-      why: "Fewer viewers decided to follow the page.",
-      todo: "Add a 'Follow for more' call to action, pin the best post, and keep the profile bio clear about what people get.",
+      title: `Fewer new ${fans} ${pct(p("newFollowers"))} (${fmt(prev.newFollowers)} → ${fmt(cur.newFollowers)})`,
+      why: yt ? "Fewer viewers decided to subscribe to the channel." : "Fewer viewers decided to follow the page.",
+      todo: yt
+        ? "Ask viewers to subscribe in the video and in a pinned comment, add an end screen with a Subscribe button, and keep the channel banner clear about what people get."
+        : "Add a 'Follow for more' call to action, pin the best post, and keep the profile bio clear about what people get.",
     });
   } else if (up("newFollowers")) {
     findings.push({
       tone: "up",
-      title: `More new followers ${pct(p("newFollowers"))} (${fmt(prev.newFollowers)} → ${fmt(cur.newFollowers)})`,
-      why: "More people liked what they saw enough to follow.",
-      todo: "Check which post brought the followers and do more of it.",
+      title: `More new ${fans} ${pct(p("newFollowers"))} (${fmt(prev.newFollowers)} → ${fmt(cur.newFollowers)})`,
+      why: yt ? "More viewers liked the videos enough to subscribe." : "More people liked what they saw enough to follow.",
+      todo: `Check which ${yt ? "video" : "post"} brought the ${fans} and do more of it.`,
     });
   }
   if (down("visits")) {

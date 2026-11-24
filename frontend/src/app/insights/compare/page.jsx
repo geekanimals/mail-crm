@@ -16,7 +16,7 @@ import ColumnCompare from "@/components/insights/ColumnCompare";
 import MissingNote from "@/components/insights/MissingNote";
 import { useData } from "@/components/insights/DataProvider";
 import { comboChanges, endOf, filterRows, groupCompare, likeForLike, listPeriods, periodTotals } from "@/lib/insights/calc";
-import { CORE_METRICS, METRICS, PLATFORM_COLORS, metricOf, theme } from "@/lib/insights/constants";
+import { CORE_METRICS, PLATFORM_COLORS, metricFor, metricsFor, theme } from "@/lib/insights/constants";
 import { fmtDate, fmtRange } from "@/lib/insights/format";
 
 export default function ComparePage() {
@@ -49,7 +49,7 @@ export default function ComparePage() {
   const prevT = periodTotals(cmp, mode, prev);
   const curT = periodTotals(cmp, mode, cur);
   const word = mode === "week" ? "week" : "month";
-  const shownMetrics = METRICS.filter((m) => cols.includes(m.key));
+  const shownMetrics = metricsFor(filters.platform).filter((m) => cols.includes(m.key));
 
   return (
     <>
@@ -89,8 +89,8 @@ export default function ComparePage() {
 
       <Card
         title="Who went up, who dropped"
-        subtitle={`${metricOf(metric).full} for every account and platform · ${label(prev)} vs ${label(cur)} · biggest drop first`}
-        right={<Select value={metric} onChange={setMetric} options={METRICS.map((m) => ({ value: m.key, label: m.full }))} />}
+        subtitle={`${metricFor(metric, filters.platform).full} for every account and platform · ${label(prev)} vs ${label(cur)} · biggest drop first`}
+        right={<Select value={metric} onChange={setMetric} options={metricsFor(filters.platform).map((m) => ({ value: m.key, label: m.full }))} />}
         style={{ marginBottom: 18 }}
       >
         <ColumnCompare list={comboChanges(cmp, mode, prev, cur)} metric={metric} prevLabel={label(prev)} curLabel={label(cur)} />
@@ -101,7 +101,7 @@ export default function ComparePage() {
         subtitle="Side-by-side comparison — see exactly what went up and what went down"
         right={
           <div style={s.chartControls}>
-            <Select value={metric} onChange={setMetric} options={METRICS.map((m) => ({ value: m.key, label: m.full }))} />
+            <Select value={metric} onChange={setMetric} options={metricsFor(filters.platform).map((m) => ({ value: m.key, label: m.full }))} />
             <Tabs
               value={by}
               onChange={setBy}
@@ -116,7 +116,7 @@ export default function ComparePage() {
       >
         <div style={s.chartGrid}>
           <div>
-            <div style={s.chartTitle}>{metricOf(metric).full} by {by}</div>
+            <div style={s.chartTitle}>{metricFor(metric, filters.platform).full} by {by}</div>
             <CompareBars
               items={groupCompare(cmp, by, mode, prev, cur, metric)}
               colors={by === "platform" ? PLATFORM_COLORS : accountColors}
@@ -137,7 +137,7 @@ export default function ComparePage() {
         subtitle="Choose which metrics to show in the table"
       >
         <div style={{ marginBottom: 16 }}>
-          <ChipToggle value={cols} onChange={setCols} options={METRICS.map((m) => ({ value: m.key, label: m.label, color: m.color }))} />
+          <ChipToggle value={cols} onChange={setCols} options={metricsFor(filters.platform).map((m) => ({ value: m.key, label: m.label, color: m.color }))} />
         </div>
         <ChangeTable list={comboChanges(cmp, mode, prev, cur)} metrics={shownMetrics} />
       </Card>

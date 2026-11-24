@@ -122,3 +122,12 @@ test("YouTube daily Totals (Engaged views) give exact-date views; Table data giv
   assert.equal(r.values.likes, 90250); // from Table data
   assert.equal(r.report.find((f) => f.name === "Chart data.csv").format, "Daily table");
 });
+
+test("Meta daily files saved as UTF-16 (Views, Viewers, Interactions, Follows, Visits, Link clicks) — all at once", () => {
+  const names = ["Views_1.csv", "Viewers.csv", "Interactions_2.csv", "Follows_1.csv", "Visits_1.csv", "Link_clicks_1.csv"];
+  const files = names.map((n) => ({ originalname: n, buffer: readFileSync(new URL("./fixtures/meta-utf16/" + n, import.meta.url)) }));
+  const r = parseFiles(files, { start: "2026-11-16", end: "2026-11-22" });
+  assert.equal(r.report.filter((x) => x.ok).length, 6);
+  assert.deepEqual(r.values, { views: 168948, reach: 122477, likes: 1598, newFollowers: 57, visits: 370, linkClicks: 2 });
+  assert.deepEqual(r.detected, { start: "2026-10-24", end: "2026-11-22" });
+});

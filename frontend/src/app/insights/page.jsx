@@ -21,7 +21,7 @@ import {
   accountChanges, breakdown, comboChanges, endOf, filterRows, groupCompare, groupSeries,
   likeForLike, listWeeks, movers, periodTotals, totalSeries,
 } from "@/lib/insights/calc";
-import { CORE_METRICS, METRICS, PLATFORM_COLORS, metricOf } from "@/lib/insights/constants";
+import { CORE_METRICS, PLATFORM_COLORS, metricFor, metricsFor } from "@/lib/insights/constants";
 import { fmtRange } from "@/lib/insights/format";
 
 export default function OverviewPage() {
@@ -41,10 +41,10 @@ export default function OverviewPage() {
   const { rows: cmp, missing } = likeForLike(data, "week", prev, cur);
   const curT = periodTotals(cmp, "week", cur);
   const prevT = periodTotals(cmp, "week", prev);
-  const extra = METRICS.filter((m) => !m.core && (curT[m.key] || prevT[m.key]));
+  const extra = metricsFor(filters.platform).filter((m) => !m.core && (curT[m.key] || prevT[m.key]));
   const trend = groupSeries(data, "platform", metric);
   const { gainers, losers } = movers(comboChanges(cmp, "week", prev, cur), metric);
-  const label = metricOf(metric).full;
+  const label = metricFor(metric, filters.platform).full;
   const curCount = cmp.filter((r) => r.week === cur).length;
 
   if (!cur) {
@@ -63,14 +63,14 @@ export default function OverviewPage() {
 
       <div style={s.stats}>
         {CORE_METRICS.map((m) => (
-          <StatCard key={m.key} metric={m.key} prev={prevT[m.key]} cur={curT[m.key]} prevLabel="Previous" trend={totalSeries(data, m.key)} />
+          <StatCard key={m.key} metric={m.key} platform={filters.platform} prev={prevT[m.key]} cur={curT[m.key]} prevLabel="Previous" trend={totalSeries(data, m.key)} />
         ))}
       </div>
 
       {extra.length > 0 && (
         <div style={s.extra}>
           {extra.map((m) => (
-            <StatCard key={m.key} compact metric={m.key} prev={prevT[m.key]} cur={curT[m.key]} prevLabel="Previous" />
+            <StatCard key={m.key} compact metric={m.key} platform={filters.platform} prev={prevT[m.key]} cur={curT[m.key]} prevLabel="Previous" />
           ))}
         </div>
       )}
@@ -78,7 +78,7 @@ export default function OverviewPage() {
       <Card
         title={`${label} — weekly trend`}
         subtitle="By platform · hover a point to see exact numbers"
-        right={<Select value={metric} onChange={setMetric} options={METRICS.map((m) => ({ value: m.key, label: m.full }))} />}
+        right={<Select value={metric} onChange={setMetric} options={metricsFor(filters.platform).map((m) => ({ value: m.key, label: m.full }))} />}
       >
         <LineChart labels={trend.labels} series={trend.series} colors={PLATFORM_COLORS} metric={metric} />
       </Card>

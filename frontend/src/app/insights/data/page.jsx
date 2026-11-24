@@ -9,7 +9,7 @@ import Card from "@/components/insights/Card";
 import ChipToggle from "@/components/insights/ChipToggle";
 import { useData } from "@/components/insights/DataProvider";
 import { filterRows, toCSV } from "@/lib/insights/calc";
-import { CORE_METRICS, METRICS, PLATFORM_COLORS, theme } from "@/lib/insights/constants";
+import { CORE_METRICS, PLATFORM_COLORS, metricsFor, theme } from "@/lib/insights/constants";
 import { fmtMetric, fmtRange } from "@/lib/insights/format";
 
 export default function DataPage() {
@@ -70,7 +70,7 @@ export default function DataPage() {
       setBusy(false);
     }
   };
-  const shown = METRICS.filter((m) => cols.includes(m.key));
+  const shown = metricsFor(filters.platform).filter((m) => cols.includes(m.key));
 
   const exportCSV = () => {
     const url = URL.createObjectURL(new Blob([toCSV(list)], { type: "text/csv" }));
@@ -136,7 +136,7 @@ export default function DataPage() {
           </div>
         )}
         <div style={{ marginBottom: 16 }}>
-          <ChipToggle value={cols} onChange={setCols} options={METRICS.map((m) => ({ value: m.key, label: m.label, color: m.color }))} />
+          <ChipToggle value={cols} onChange={setCols} options={metricsFor(filters.platform).map((m) => ({ value: m.key, label: m.label, color: m.color }))} />
         </div>
 
         <div style={s.scroll}>

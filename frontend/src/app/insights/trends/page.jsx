@@ -11,7 +11,7 @@ import Tabs from "@/components/insights/Tabs";
 import Select from "@/components/insights/Select";
 import { useData } from "@/components/insights/DataProvider";
 import { breakdown, endOf, filterRows, groupSeries, listWeeks } from "@/lib/insights/calc";
-import { METRICS, PLATFORM_COLORS, metricOf } from "@/lib/insights/constants";
+import { PLATFORM_COLORS, metricFor, metricsFor } from "@/lib/insights/constants";
 import { fmtRange } from "@/lib/insights/format";
 
 export default function TrendsPage() {
@@ -26,7 +26,7 @@ export default function TrendsPage() {
   const weeks = listWeeks(data);
   const [week, setWeek] = useState("");
   const shown = weeks.includes(week) ? week : weeks.at(-1);
-  const label = metricOf(metric).full;
+  const label = metricFor(metric, filters.platform).full;
   const total = { name: "Total", values: labels.map((_, i) => series.reduce((s, sr) => s + sr.values[i], 0)) };
 
   return (
@@ -36,7 +36,7 @@ export default function TrendsPage() {
       </PageHeader>
 
       <div style={s.controls}>
-        <Select label="Metric" value={metric} onChange={setMetric} options={METRICS.map((m) => ({ value: m.key, label: m.full }))} />
+        <Select label="Metric" value={metric} onChange={setMetric} options={metricsFor(filters.platform).map((m) => ({ value: m.key, label: m.full }))} />
         <Tabs
           value={by}
           onChange={setBy}
@@ -52,7 +52,7 @@ export default function TrendsPage() {
       </Card>
 
       <Card title={`${label} — total trend`} subtitle="All combined" style={{ marginTop: 16 }}>
-        <LineChart labels={labels} series={[total]} colors={{ Total: metricOf(metric).color }} metric={metric} />
+        <LineChart labels={labels} series={[total]} colors={{ Total: metricFor(metric, filters.platform).color }} metric={metric} />
       </Card>
 
       <div style={s.grid}>

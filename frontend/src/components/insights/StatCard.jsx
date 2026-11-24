@@ -1,12 +1,12 @@
 import ChangeBadge from "./ChangeBadge";
 import Sparkline from "./Sparkline";
-import { metricOf, theme } from "@/lib/insights/constants";
+import { metricFor, theme } from "@/lib/insights/constants";
 import { change } from "@/lib/insights/calc";
 import { fmtMetric, fmtValue } from "@/lib/insights/format";
 
 // Big metric card: value, % change, previous value and a small trend line
-export default function StatCard({ metric, prev, cur, prevLabel, trend, compact }) {
-  const m = metricOf(metric);
+export default function StatCard({ metric, prev, cur, prevLabel, trend, compact, platform }) {
+  const m = metricFor(metric, platform); // YouTube → "Subscribers"
   const diff = cur - prev;
 
   return (

@@ -26,6 +26,12 @@ export const METRIC_KEYS = METRICS.map((m) => m.key);
 export const CORE_METRICS = METRICS.filter((m) => m.core);
 export const metricOf = (key) => METRICS.find((m) => m.key === key);
 
+// YouTube calls followers "subscribers" — use these wherever the platform is known
+const toSubs = (t) => t.replace(/Followers/g, "Subscribers").replace(/Follows/g, "Subscribers");
+const YT_METRICS = METRICS.map((m) => (/Follow/.test(m.full) ? { ...m, label: toSubs(m.label), full: toSubs(m.full) } : m));
+export const metricsFor = (platform) => (platform === "YouTube" ? YT_METRICS : METRICS);
+export const metricFor = (key, platform) => metricsFor(platform).find((m) => m.key === key);
+
 export const PLATFORM_COLORS = {
   Facebook: "#1877F2",
   Instagram: "#E1306C",
