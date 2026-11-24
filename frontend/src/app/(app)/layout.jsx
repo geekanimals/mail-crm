@@ -4,7 +4,7 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
-import { LuBan, LuBell, LuBriefcase, LuCheck, LuFileSpreadsheet, LuKanban, LuLightbulb, LuNewspaper, LuLayoutDashboard, LuLogOut, LuMenu, LuReply, LuSend, LuSettings, LuTrendingUp, LuUserCog, LuUsers, LuX } from 'react-icons/lu';
+import { LuBan, LuBell, LuBriefcase, LuCheck, LuFileSpreadsheet, LuGlobe, LuKanban, LuLightbulb, LuNewspaper, LuLayoutDashboard, LuLogOut, LuMenu, LuReply, LuSend, LuSettings, LuTrendingUp, LuUserCog, LuUsers, LuX } from 'react-icons/lu';
 import { api, getToken, setRole, setToken } from '@/lib/api';
 
 const ICON = process.env.NEXT_PUBLIC_LOGO_ICON_URL || '/fav.png'; // square logo (always shown)
@@ -18,6 +18,7 @@ const MENU = [
   ['/import', 'Import', LuFileSpreadsheet],
   ['/campaigns', 'Campaigns', LuSend],
   ['/replies', 'Replies', LuReply],
+  ['/website-leads', 'Website Leads', LuGlobe],
   ['/newsletter', 'Newsletter', LuNewspaper],
   ['/ideas', 'Idea Bucket', LuLightbulb],
   ['/insights', 'Insights', LuTrendingUp], // social media Insights Dashboard (its own area)
@@ -115,6 +116,7 @@ export default function AppLayout({ children }) {
       case 'replied': return { icon: LuReply, title: `${who} replied`, href: '/replies', extra: 'Follow-ups stopped' };
       case 'unsubscribed': return { icon: LuBan, title: `${who} unsubscribed`, href: '/contacts', extra: 'Will never be emailed again' };
       case 'bounced': return { icon: LuX, title: `Email to ${who} bounced`, href: '/contacts', extra: 'Address blocked' };
+      case 'website': return { icon: LuGlobe, title: `${who} sent the website form`, href: '/website-leads', extra: 'Hot lead · meeting task for Aanchal' };
       default: return { icon: LuX, title: `Couldn't send ${step(n.step).toLowerCase()} to ${who}`, href: n.campaign ? `/campaigns?open=${n.campaign._id}` : '/settings' };
     }
   };
@@ -313,7 +315,9 @@ body { background: #f3fbfd; color: var(--text); overflow-x: clip; }
 .brand-name { height: 30px; width: auto; max-width: 120px; object-fit: contain; flex-shrink: 0; opacity: 0; transition: opacity .18s; }
 .side:hover .brand-name, .side.open .brand-name { opacity: 1; }
 .side-close { display: none; }
-.side nav { display: flex; flex-direction: column; gap: 8px; }
+.side nav { display: flex; flex-direction: column; gap: 8px; flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; scrollbar-width: none; } /* many links + short screen: the list scrolls */
+.side nav::-webkit-scrollbar { display: none; }
+.side-brand, .side-logout, .side-line { flex-shrink: 0; }
 .side nav a, .side-logout {
   position: relative; display: flex; align-items: center; gap: 14px; height: 48px; padding: 0 12px; border-radius: 16px;
   color: #4b6873; font-weight: 500; font-size: 14.5px; white-space: nowrap; border: 0; background: none; cursor: pointer; width: 100%;
@@ -375,6 +379,7 @@ body { background: #f3fbfd; color: var(--text); overflow-x: clip; }
 .bell-item.read:hover { opacity: .9; }
 .bell-avatar { width: 34px; height: 34px; border-radius: 11px; flex-shrink: 0; display: grid; place-items: center; font-size: 16px; background: var(--c-100); color: var(--c-700); }
 .bell-avatar.t-replied { background: rgba(22, 163, 74, .12); color: #15803d; }
+.bell-avatar.t-website { background: rgba(234, 88, 12, .12); color: #c2410c; }
 .bell-avatar.t-unsubscribed, .bell-avatar.t-bounced, .bell-avatar.t-failed { background: rgba(225, 29, 72, .1); color: #e11d48; }
 .bell-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .bell-text b { font-size: 13.5px; font-weight: 600; }

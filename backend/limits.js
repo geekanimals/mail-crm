@@ -35,3 +35,6 @@ export const testEmailLimit = limiter(10 * 60000, r.testEmailsPer10Min, 'Too man
 
 // public links inside emails (unsubscribe page, open pixel, click tracking)
 export const publicLimit = limiter(60000, r.publicPerMinute, 'Too many requests.');
+
+// the website's server sending client-form leads (each one is a real enquiry)
+export const websiteLeadLimit = limiter(60000, 20, 'Too many website leads. Please wait a minute.');

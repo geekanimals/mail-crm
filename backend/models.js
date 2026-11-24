@@ -268,7 +268,7 @@ export const setSetting = (key, value) => Setting.updateOne({ key }, { $set: { v
 
 // Activity feed for the bell: every email sent, reply, unsubscribe, bounce, failure (kept 60 days)
 const notificationSchema = new Schema({
-  type: { type: String, enum: ['sent', 'replied', 'unsubscribed', 'bounced', 'failed'], required: true },
+  type: { type: String, enum: ['sent', 'replied', 'unsubscribed', 'bounced', 'failed', 'website'], required: true },
   contact: { type: id, ref: 'Contact' },
   campaign: { type: id, ref: 'Campaign' },
   name: String, // person's name or email at the time

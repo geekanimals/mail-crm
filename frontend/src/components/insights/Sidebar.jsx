@@ -134,7 +134,7 @@ const s = {
     placeItems: "center",
     cursor: "pointer",
   },
-  nav: { display: "flex", flexDirection: "column", gap: 8 },
+  nav: { display: "flex", flexDirection: "column", gap: 8, flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden", scrollbarWidth: "none" }, // scrolls on short screens
   link: {
     position: "relative",
     display: "flex",

@@ -6,7 +6,7 @@ process.on('unhandledRejection', (e) => console.warn('[warn] unhandled:', e?.cod
 import cors from 'cors';
 import helmet from 'helmet';
 import mongoose from 'mongoose';
-import { apiLimit, heavyLimit, publicLimit, testEmailLimit } from './limits.js';
+import { apiLimit, heavyLimit, publicLimit, testEmailLimit, websiteLeadLimit } from './limits.js';
 import { config, checkConfig } from './config.js';
 import { startWorker } from './worker.js';
 import authRoutes, { requireAdmin, requireAuth } from './routes/auth.js';
@@ -23,6 +23,7 @@ import fileRoutes from './routes/files.js';
 import dealRoutes from './routes/deals.js';
 import ideaRoutes from './routes/ideas.js';
 import newsletterRoutes from './routes/newsletter.js';
+import { admin as websiteLeadRoutes, hook as websiteLeadHook } from './routes/website-leads.js';
 import insightsRoutes, { ensureDefaultAccounts } from './insights/index.js';
 import { Company, Contact, Notification, Reply, getSetting, setSetting } from './models.js';
 import { syncPipeline } from './worker.js';
@@ -62,6 +63,7 @@ const heavyWrites = (req, res, next) => (req.method === 'GET' ? next() : heavyLi
 app.use(['/api/files', '/api/contacts/import', '/api/contacts/import-continue', '/api/companies/import/google', '/api/settings/run', '/api/settings/test-smtp', '/api/replies/check', '/api/campaigns/:id/start', '/api/insights/uploads'], heavyWrites);
 app.use('/api/settings/test-email', testEmailLimit);
 
+app.use('/api/public/website-lead', websiteLeadLimit, websiteLeadHook); // the website's client form (shared secret, no login)
 app.use('/api/auth', authRoutes);
 app.use('/api/portal', requireAuth, portalRoutes); // team members + clients
 app.use('/api/me', requireAuth, meRoutes); // employee portal (team members)
@@ -76,6 +78,7 @@ app.use('/api/companies', ...admin, companyRoutes);
 app.use('/api/team', ...admin, teamRoutes);
 app.use('/api/hr', ...admin, hrRoutes);
 app.use('/api/newsletter', ...admin, newsletterRoutes);
+app.use('/api/website-leads', ...admin, websiteLeadRoutes);
 app.use('/api', ...admin, dashboardRoutes);
 
 app.use((_req, res) => res.status(404).json({ error: 'Not found' }));

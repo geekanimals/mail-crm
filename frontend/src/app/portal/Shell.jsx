@@ -138,7 +138,8 @@ const css = `
 .es-brand b { display: block; font-size: 18px; letter-spacing: -.01em; }
 .es-brand small { font-size: 12px; color: #5d7680; }
 .es-close { display: none; margin-left: auto; width: 36px; height: 36px; border-radius: 12px; border: 0; background: rgba(50,193,223,.14); color: #0b87a5; font-size: 18px; cursor: pointer; place-items: center; }
-.es-nav { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; padding: 10px 2px; }
+.es-nav::-webkit-scrollbar { display: none; }
+.es-nav { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; scrollbar-width: none; display: flex; flex-direction: column; gap: 14px; padding: 10px 2px; }
 .es-group { display: flex; flex-direction: column; gap: 2px; }
 .es-glabel { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: #8aa1aa; padding: 0 12px 6px; }
 .es-link { display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px 12px; border: 0; border-radius: 14px; background: transparent; color: #3a5560; font: inherit; font-size: 14.5px; font-weight: 600; cursor: pointer; text-align: left; transition: background .15s, color .15s, transform .15s; }
