@@ -85,7 +85,7 @@ export default function RepliesPage() {
             <div key={r._id} className={`rp-item ${r.handled ? 'done' : ''}`}>
               <div className="rp-main">
                 <div className="row rp-top">
-                  {r.contact ? <Link href={leadHref(r.contact)} className="rp-who"><b>{r.contact.name || r.from}</b></Link> : <b>{r.from}</b>}
+                  {r.contact ? <Link href={leadHref(r.contact, 'replies')} className="rp-who"><b>{r.contact.name || r.from}</b></Link> : <b>{r.from}</b>}
                   <span className="small muted">{r.from} · {date(r.receivedAt)}</span>
                 </div>
                 {(r.contact?.title || r.contact?.companyId || r.contact?.company) && (

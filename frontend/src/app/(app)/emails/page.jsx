@@ -85,7 +85,7 @@ export default function EmailsPage() {
                 <tbody>
                   {d.list.map((e) => (
                     <tr key={e._id}>
-                      <td>{e.contact ? <Link href={leadHref(e.contact)}><b>{e.contact.name || e.contact.email}</b></Link> : <b>Deleted contact</b>}<small>{[e.contact?.email, e.contact?.company].filter(Boolean).join(' · ')}</small></td>
+                      <td>{e.contact ? <Link href={leadHref(e.contact, 'emails')}><b>{e.contact.name || e.contact.email}</b></Link> : <b>Deleted contact</b>}<small>{[e.contact?.email, e.contact?.company].filter(Boolean).join(' · ')}</small></td>
                       <td data-label="Email"><span className="em-step">{stepName(e.step)}</span><small className="em-subject">{e.subject}</small></td>
                       <td data-label="Campaign">{e.campaign ? <Link href={`/campaigns?open=${e.campaign._id}`}>{campaignName(e.campaign.name)}</Link> : '—'}</td>
                       <td data-label="Sent">{when(e.sentAt)}</td>

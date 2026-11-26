@@ -54,8 +54,12 @@ export const isUrl = (v) => /^https?:\/\/\S+$/i.test(String(v || '').trim());
 export const Value = ({ v }) => (isUrl(v) ? <a href={v.trim()} target="_blank" rel="noopener noreferrer" className="ct-link">{v.replace(/^https?:\/\/(www\.)?/, '').slice(0, 60)} <LuExternalLink /></a> : <span>{v}</span>);
 
 
-/** inline: a card on the page (the lead page). Otherwise a side panel over the page, closed with onClose. */
-export default function PersonDetails({ id, inline = false, onClose, onChanged }) {
+const TABS = [['overview', 'Overview'], ['emails', 'Emails'], ['replies', 'Replies'], ['sheet', 'Sheet details']];
+
+/** inline: a card on the page (the lead page). Otherwise a side panel over the page, closed with onClose.
+ *  tab (lead page): show one part at a time (overview / emails / replies / sheet) with a tab bar; onTab changes it.
+ *  Without tab everything is shown one under the other, as before. */
+export default function PersonDetails({ id, inline = false, onClose, onChanged, tab, onTab }) {
   const [open, setOpen] = useState(null); // the person + emails + replies
   const [edit, setEdit] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -81,6 +85,7 @@ export default function PersonDetails({ id, inline = false, onClose, onChanged }
   const startEdit = () => {
     const oc = open.contact;
     setEdit({ ...Object.fromEntries(EDITABLE.map(([k]) => [k, oc[k] || ''])), fields: (oc.fields || []).map((f) => ({ k: f.k, v: f.v })) });
+    if (tab && tab !== 'overview') onTab?.('overview');
   };
   const setField = (i, v) => setEdit({ ...edit, fields: edit.fields.map((f, j) => (j === i ? { ...f, v } : f)) });
   const saveEdit = async (e) => {
@@ -99,6 +104,53 @@ export default function PersonDetails({ id, inline = false, onClose, onChanged }
   if (!open) return inline ? <div className="ct-panel ct-inline"><style>{ctCss}</style><p className="muted">Loading…</p></div> : null;
   const oc = open.contact;
   const company = oc.companyId;
+  const show = (t) => !tab || tab === t;
+  const sentCount = open.emails.filter((e) => e.status === 'sent').length;
+  const counts = { emails: `${sentCount} sent${open.planned?.length && oc.email ? ` · ${open.planned.length} planned` : ''}`, replies: open.replies.length, sheet: oc.fields?.length || 0 };
+  const lastEmail = open.emails[0];
+  const lastReply = open.replies[0];
+  // the reply that came after this email (and before the next one), to link "see reply"
+  const replyAfter = (m) => open.replies.find((r) => new Date(r.receivedAt) >= new Date(m.sentAt));
+  const sentBlock = (
+    <>
+      <h3>Sent emails</h3>
+      {open.emails.length === 0 && <p className="muted small">No emails sent yet.</p>}
+      {open.emails.map((m) => (
+        <div key={m._id} className="ct-item">
+          <b>{stepName(m.step)}</b> · {campaignName(m.campaign?.name)}
+          <small>{m.subject}</small>
+          <small>
+            {date(m.sentAt)} {m.status === 'failed' ? `· failed: ${m.error}` : ''}{m.openedAt ? ' · opened' : ''}
+            {tab && m.status !== 'failed' && replyAfter(m) && <> · <button type="button" className="ct-tablink" onClick={() => onTab?.('replies')}>see reply</button></>}
+          </small>
+        </div>
+      ))}
+    </>
+  );
+  const plannedBlock = open.planned?.length > 0 && oc.email && (
+    <>
+      <h3>Planned emails ({open.planned.length})</h3>
+      {tab && <p className="muted small">Click an email to read it.</p>}
+      {open.planned.map((m, i) => {
+        const title = i === 0 ? 'First email' : `Follow-up ${i}`;
+        const done = i < sentCount;
+        const inner = (
+          <>
+            <small>{m.subject || (i === 0 ? '(no subject)' : 'Re: same thread')}</small>
+            <p>{m.body}</p>
+          </>
+        );
+        return tab ? (
+          <details key={i} className={`ct-item plan ${done ? 'sent' : ''}`}>
+            <summary><b>{title}</b>{done ? <span className="muted small"> · sent</span> : ''}</summary>
+            {inner}
+          </details>
+        ) : (
+          <div key={i} className={`ct-item plan ${done ? 'sent' : ''}`}><b>{title}</b>{inner}</div>
+        );
+      })}
+    </>
+  );
   const body = (
     <>
       <style>{ctCss}</style>
@@ -116,7 +168,16 @@ export default function PersonDetails({ id, inline = false, onClose, onChanged }
         <span className={`badge ${oc.status}`}>{oc.status}</span>
         {company && <Link href={`/lead?company=${company._id}`} className={`stage ${company.stage}`}>{company.name} · {STAGE[company.stage]}</Link>}
       </div>
-      {oc.status === 'bounced' && (
+      {tab && (
+        <div className="ct-tabs" role="tablist">
+          {TABS.map(([k, l]) => (
+            <button key={k} type="button" role="tab" aria-selected={tab === k} className={tab === k ? 'on' : ''} onClick={() => onTab?.(k)}>
+              {l}{counts[k] !== undefined && <span>{counts[k]}</span>}
+            </button>
+          ))}
+        </div>
+      )}
+      {show('overview') && oc.status === 'bounced' && (
         <div className="ct-bounce-box">
           <b>Why the email bounced: {oc.bounce?.reason || 'reason not found yet'}</b>
           {oc.bounce?.detail && <span>Their mail server said: “{oc.bounce.detail}”{oc.bounce.code ? ` (${oc.bounce.code})` : ''}</span>}
@@ -128,7 +189,7 @@ export default function PersonDetails({ id, inline = false, onClose, onChanged }
         </div>
       )}
 
-      {open.followUp && !edit && (
+      {show('overview') && open.followUp && !edit && (
         <div className="fu-panel">
           <FollowUp f={open.followUp} />
           {open.followUp.status === 'active' && (
@@ -142,7 +203,14 @@ export default function PersonDetails({ id, inline = false, onClose, onChanged }
         </div>
       )}
 
-      {edit ? (
+      {tab === 'overview' && !edit && (lastEmail || lastReply) && (
+        <div className="ct-latest">
+          {lastReply && <button type="button" onClick={() => onTab?.('replies')}><b>Latest reply · {date(lastReply.receivedAt)}</b><span>{lastReply.snippet || lastReply.subject}</span></button>}
+          {lastEmail && <button type="button" onClick={() => onTab?.('emails')}><b>Latest email · {date(lastEmail.sentAt)}</b><span>{stepName(lastEmail.step)} · {lastEmail.subject}{lastEmail.openedAt ? ' · opened' : ''}</span></button>}
+        </div>
+      )}
+
+      {!show('overview') ? null : edit ? (
         <form className="ct-edit" onSubmit={saveEdit}>
           <div className="ct-editgrid">
             {EDITABLE.map(([k, l]) => (
@@ -184,7 +252,8 @@ export default function PersonDetails({ id, inline = false, onClose, onChanged }
         </>
       )}
 
-      {!edit && oc.fields?.length > 0 && (
+      {tab === 'sheet' && !oc.fields?.length && <p className="muted small">No extra columns from a sheet for this person.</p>}
+      {!edit && show('sheet') && oc.fields?.length > 0 && (
         <details className="ct-all" open>
           <summary>All details from the sheet ({oc.fields.length})</summary>
           <dl className="ct-dl">
@@ -195,34 +264,22 @@ export default function PersonDetails({ id, inline = false, onClose, onChanged }
         </details>
       )}
 
-      {open.planned?.length > 0 && oc.email && (
+      {show('emails') && (tab ? <>{sentBlock}{plannedBlock}</> : <>{plannedBlock}{sentBlock}</>)}
+      {show('replies') && (
         <>
-          <h3>Planned emails ({open.planned.length})</h3>
-          {open.planned.map((m, i) => (
-            <div key={i} className={`ct-item plan ${i < open.emails.filter((e) => e.status === 'sent').length ? 'sent' : ''}`}>
-              <b>{i === 0 ? 'First email' : `Follow-up ${i}`}</b>
-              <small>{m.subject || (i === 0 ? '(no subject)' : 'Re: same thread')}</small>
-              <p>{m.body}</p>
+          {(tab || open.replies.length > 0) && <h3>Replies</h3>}
+          {tab && open.replies.length === 0 && <p className="muted small">No replies yet.</p>}
+          {open.replies.map((r) => (
+            <div key={r._id} className="ct-item reply">
+              <small>{date(r.receivedAt)} {r.isAutoReply ? '(auto-reply)' : ''}{r.from ? ` · from ${r.from}` : ''}</small>
+              <p>{r.snippet || r.subject}</p>
+              {tab && r.text && r.text.trim() !== (r.snippet || '').trim() && (
+                <details className="ct-full"><summary>Show the full reply</summary><p>{r.text}</p></details>
+              )}
             </div>
           ))}
         </>
       )}
-      <h3>Sent emails</h3>
-      {open.emails.length === 0 && <p className="muted small">No emails sent yet.</p>}
-      {open.emails.map((m) => (
-        <div key={m._id} className="ct-item">
-          <b>{stepName(m.step)}</b> · {campaignName(m.campaign?.name)}
-          <small>{m.subject}</small>
-          <small>{date(m.sentAt)} {m.status === 'failed' ? `· failed: ${m.error}` : ''}{m.openedAt ? ' · opened' : ''}</small>
-        </div>
-      ))}
-      {open.replies.length > 0 && <h3>Replies</h3>}
-      {open.replies.map((r) => (
-        <div key={r._id} className="ct-item reply">
-          <small>{date(r.receivedAt)} {r.isAutoReply ? '(auto-reply)' : ''}</small>
-          <p>{r.snippet || r.subject}</p>
-        </div>
-      ))}
     </>
   );
   if (inline) return <div className="ct-panel ct-inline" id={`p-${id}`}>{body}</div>;
@@ -324,6 +381,20 @@ export const ctCss = `
 .ct-item.plan { border-left: 3px solid var(--c-200); }
 .ct-item.plan.sent { border-left-color: var(--c); opacity: .7; }
 .ct-item p { white-space: pre-wrap; margin-top: 4px; }
+.ct-tabs { display: flex; gap: 4px; flex-wrap: wrap; border-bottom: 1px solid #e2e8f0; margin: 14px 0 4px; }
+.ct-tabs button { background: none; border: 0; border-bottom: 2px solid transparent; padding: 8px 12px; font: inherit; font-size: 13.5px; font-weight: 600; color: #64748b; cursor: pointer; display: inline-flex; gap: 6px; align-items: center; margin-bottom: -1px; }
+.ct-tabs button span { font-size: 11.5px; font-weight: 600; background: #f1f5f9; color: #475569; border-radius: 99px; padding: 1px 7px; }
+.ct-tabs button.on { color: var(--c-700); border-bottom-color: var(--c); }
+.ct-tabs button.on span { background: var(--c-100); color: var(--c-700); }
+.ct-tablink { background: none; border: 0; padding: 0; font: inherit; color: var(--c-700); font-weight: 600; cursor: pointer; }
+.ct-tablink:hover { text-decoration: underline; }
+.ct-latest { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; margin: 12px 0 4px; }
+.ct-latest button { text-align: left; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 14px; padding: 10px 12px; font: inherit; cursor: pointer; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.ct-latest button:hover { border-color: var(--c-200); background: #fff; }
+.ct-latest b { font-size: 12.5px; color: var(--c-700); }
+.ct-latest span { font-size: 13px; color: #334155; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+details.ct-item summary { cursor: pointer; list-style: revert; }
+.ct-full summary { cursor: pointer; font-size: 12.5px; color: var(--c-700); font-weight: 600; margin-top: 6px; }
 @media (max-width: 900px) {
   .ct-sticky { position: static; min-width: 0; background: none; box-shadow: none; }
   .ct-cell { max-width: none; }
