@@ -5,6 +5,10 @@ import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import { LuBuilding2, LuCopy, LuExternalLink, LuHandshake, LuKeyRound, LuPlus, LuTrash2, LuUserPlus, LuX } from 'react-icons/lu';
 import { api, date, notify } from '@/lib/api';
+import { label, Value } from '@/components/PersonDetails';
+
+// sheet columns about the person (shown on their own tab), not the company
+const PERSON_COL = /^(dm[\s_]|email[\s_]|e-?mail$|name$|first[\s_]?name|last[\s_]?name|phone$|designation$)/i;
 
 export const STAGES = [['cold', 'Cold lead'], ['hot', 'Hot lead'], ['opportunity', 'Opportunity'], ['account', 'Account'], ['old_client', 'Old client']];
 export const STAGE = Object.fromEntries(STAGES);
@@ -185,6 +189,30 @@ export default function CompanyDetails({ id, onClose, convertFirst, inline = fal
           <label className="field pl-wide">Notes<textarea rows={4} value={info.notes} onChange={(e) => setInfo({ ...info, notes: e.target.value })} /></label>
           <div className="pl-wide"><button className="btn sm">Save details</button></div>
         </form>
+
+        {(() => {
+          // every company column from the people's uploaded sheets (same value once; different values all shown)
+          const seen = new Map();
+          d.contacts.forEach((p) => (p.fields || []).forEach((f) => {
+            const v = String(f.v ?? '').trim();
+            if (!v || /^(none|n\/a|-|not verified)$/i.test(v) || PERSON_COL.test(String(f.k).trim())) return;
+            const k = label(f.k).toLowerCase();
+            if (!seen.has(k)) seen.set(k, { k: label(f.k), vals: [] });
+            if (!seen.get(k).vals.includes(v)) seen.get(k).vals.push(v);
+          }));
+          const rows = [...seen.values()];
+          if (!rows.length) return null;
+          return (
+            <>
+              <h3>From the sheet ({rows.length})</h3>
+              <dl className="pl-sheet">
+                {rows.map((r) => (
+                  <div key={r.k} className="pl-sheetrow"><dt>{r.k}</dt><dd>{r.vals.map((v, i) => <div key={i}><Value v={v} /></div>)}</dd></div>
+                ))}
+              </dl>
+            </>
+          );
+        })()}
 
         <h3>People ({d.contacts.length})</h3>
         {inline && d.contacts.length > 0 && <p className="muted small">Click a name to jump to their full details below.</p>}
@@ -419,6 +447,13 @@ export const plCss = `
 }
 
 .pl-inline-wrap { display: block; }
+.pl-sheet { margin: 0; border: 1px solid #e2e8f0; border-radius: 14px; padding: 6px 14px; }
+.pl-sheetrow { display: grid; grid-template-columns: 190px 1fr; gap: 12px; padding: 7px 0; border-bottom: 1px solid #f1f5f9; font-size: 13.5px; }
+.pl-sheetrow:last-child { border-bottom: 0; }
+.pl-sheetrow dt { color: #64748b; text-transform: capitalize; }
+.pl-sheetrow dd { margin: 0; color: #0f172a; white-space: pre-wrap; word-break: break-word; }
+.pl-sheetrow dd a { color: var(--c-700); }
+@media (max-width: 640px) { .pl-sheetrow { grid-template-columns: 1fr; gap: 2px; } }
 .pl-panel.pl-inline { position: static; width: 100%; max-width: none; height: auto; overflow: visible; border-radius: 22px; box-shadow: 0 12px 34px rgba(30,41,59,.06); border: 1px solid rgba(255,255,255,.85); }
 .pl-personlink { background: none; border: 0; padding: 0; font: inherit; font-weight: 700; color: var(--c-700); cursor: pointer; text-align: left; }
 .pl-personlink:hover { text-decoration: underline; }
