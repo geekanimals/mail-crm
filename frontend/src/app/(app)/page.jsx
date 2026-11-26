@@ -39,9 +39,9 @@ export default function Dashboard() {
         </div>
         <div className="dash-stats">
           <Stat href="/contacts" icon={LuUsers} color="blue" label="Total Contacts" value={num(t.contacts)} note={`${num(t.active)} in a sequence now`} />
-          <Stat href="#history" icon={LuSend} color="green" label="Emails Sent" value={num(t.sent)} note={`${num(t.todaySent)} / ${num(t.dailyLimit)} today`} />
-          <Stat href="#history" icon={LuMailOpen} color="orange" label="Opened" value={num(t.opened)} note={`${d.rates.open}% open rate`} />
-          <Stat href="/replies" icon={LuReply} color="purple" label="Replied" value={num(t.replied)} note={`${d.rates.reply}% reply rate`} />
+          <Stat href="/emails?show=sent" icon={LuSend} color="green" label="Emails Sent" value={num(t.sent)} note={`${num(t.todaySent)} / ${num(t.dailyLimit)} today`} />
+          <Stat href="/emails?show=opened" icon={LuMailOpen} color="orange" label="Opened" value={num(t.opened)} note={`${d.rates.open}% open rate`} />
+          <Stat href="/replies?handled=all" icon={LuReply} color="purple" label="Replied" value={num(t.replied)} note={`${d.rates.reply}% reply rate`} />
         </div>
       </div>
 
@@ -63,7 +63,7 @@ export default function Dashboard() {
               const few = d.chart.length <= 14;
               const showDate = few || i % (d.chart.length <= 31 ? 5 : 15) === 0 || i === d.chart.length - 1;
               return (
-                <button type="button" key={x.date} className={`dash-col ${hover?.date === x.date ? 'on' : ''}`} onMouseEnter={() => setHover(x)} onFocus={() => setHover(x)} onClick={() => document.getElementById('history')?.scrollIntoView({ behavior: 'smooth' })} aria-label={`${dayName(x.date, true)}: ${x.sent} sent, ${x.opened} opened, ${x.replied} replies`}>
+                <button type="button" key={x.date} className={`dash-col ${hover?.date === x.date ? 'on' : ''}`} onMouseEnter={() => setHover(x)} onFocus={() => setHover(x)} onClick={() => router.push(`/emails?show=sent&day=${x.date}`)} aria-label={`${dayName(x.date, true)}: ${x.sent} sent, ${x.opened} opened, ${x.replied} replies`}>
                   <em className="dash-num">
                     {few && (<>
                       {num(x.sent)}
@@ -85,7 +85,7 @@ export default function Dashboard() {
             {hover ? (
               <><b>{dayName(hover.date, true)}</b><span>{num(hover.sent)} sent</span><span>{num(hover.opened)} opened</span><span>{num(hover.replied)} {hover.replied === 1 ? 'reply' : 'replies'}</span></>
             ) : (
-              <><b>Last {days} days</b><span>{num(d.chart.reduce((n, x) => n + x.sent, 0))} sent</span><span>{num(d.chart.reduce((n, x) => n + x.opened, 0))} opened</span><span>{num(d.chart.reduce((n, x) => n + x.replied, 0))} replies</span><small>Point at a day for its numbers</small></>
+              <><b>Last {days} days</b><span>{num(d.chart.reduce((n, x) => n + x.sent, 0))} sent</span><span>{num(d.chart.reduce((n, x) => n + x.opened, 0))} opened</span><span>{num(d.chart.reduce((n, x) => n + x.replied, 0))} replies</span><small>Point at a day for its numbers · click it to see those emails</small></>
             )}
           </div>
           <p className="small muted"><i className="dot blue" /> Sent &nbsp; <i className="dot orange" /> Replies</p>
@@ -96,8 +96,8 @@ export default function Dashboard() {
           {d.steps.every((s) => !s.sent) ? (
             <p className="muted">No emails sent yet.</p>
           ) : (
-            d.steps.map((s) => (
-              <Link key={s.label} href="/replies" className="dash-step">
+            d.steps.map((s, i) => (
+              <Link key={s.label} href={`/replies?handled=all&step=${i + 1}`} className="dash-step" title={`See the ${s.replies} replies to ${s.label}`}>
                 <div className="row dash-step-top">
                   <b>{s.label}</b>
                   <span className="small muted">{num(s.replies)} replies · {num(s.sent)} sent · {s.rate}%</span>
@@ -107,7 +107,7 @@ export default function Dashboard() {
             ))
           )}
           <div className="dash-mini">
-            <Link href="#history"><small>Clicked</small><b>{num(t.clicked)}</b></Link>
+            <Link href="/emails?show=clicked"><small>Clicked</small><b>{num(t.clicked)}</b></Link>
             <Link href="/contacts?status=unsubscribed"><small>Unsubscribed</small><b>{num(t.unsubscribed)}</b></Link>
             <Link href="/contacts?status=bounced"><small>Bounced</small><b>{num(t.bounced)}</b></Link>
             <Link href="/replies"><small>New replies</small><b>{num(t.unhandled)}</b></Link>

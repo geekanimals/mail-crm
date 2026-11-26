@@ -9,6 +9,45 @@ import { ah, checkId, fail, pct, validEmail } from '../utils.js';
 
 const router = Router();
 
+/* ---------- every email sent: the dashboard boxes open this list (sent / opened / clicked, one day, one step) ---------- */
+router.get(
+  '/emails',
+  ah(async (req, res) => {
+    const show = ['sent', 'opened', 'clicked'].includes(req.query.show) ? req.query.show : 'sent';
+    const filter = { status: 'sent' };
+    if (show === 'opened') filter.openedAt = { $exists: true };
+    if (show === 'clicked') filter.clickedAt = { $exists: true };
+    const field = show === 'opened' ? 'openedAt' : show === 'clicked' ? 'clickedAt' : 'sentAt';
+    if (/^\d{4}-\d{2}-\d{2}$/.test(String(req.query.day || ''))) {
+      // that calendar day in the CRM's time zone
+      const fmt = { $dateToString: { format: '%Y-%m-%d', date: `$${field}`, timezone: config.timezone } };
+      filter.$expr = { $eq: [fmt, req.query.day] };
+    }
+    const step = Number(req.query.step);
+    if (Number.isInteger(step) && step >= 1 && step <= 50) filter.step = step;
+    const q = String(req.query.q || '').trim().slice(0, 100);
+    if (q) {
+      const rx = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+      const ids = await Contact.find({ $or: [{ name: rx }, { email: rx }, { company: rx }] }).select('_id').limit(2000).lean();
+      filter.$or = [{ contact: { $in: ids.map((c) => c._id) } }, { subject: rx }];
+    }
+    const limit = 25;
+    const page = Math.max(1, Math.floor(Number(req.query.page)) || 1);
+    const [list, total] = await Promise.all([
+      EmailLog.find(filter).select('-html -text').sort({ [field]: -1 }).skip((page - 1) * limit).limit(limit)
+        .populate('contact', 'name email company status').populate('campaign', 'name').lean(),
+      EmailLog.countDocuments(filter),
+    ]);
+    res.json({
+      show,
+      list: list.map((e) => ({ _id: e._id, step: e.step, subject: e.subject, sentAt: e.sentAt, openedAt: e.openedAt, clickedAt: e.clickedAt, contact: e.contact, campaign: e.campaign })),
+      total,
+      page,
+      pages: Math.max(1, Math.ceil(total / limit)),
+    });
+  })
+);
+
 /* ---------- analytics ---------- */
 router.get(
   '/dashboard',
@@ -27,7 +66,7 @@ router.get(
       EmailLog.aggregate([{ $match: { status: 'sent', sentAt: { $gte: since } } }, { $group: { _id: day('sentAt'), n: { $sum: 1 } } }]),
       Reply.aggregate([{ $match: { isAutoReply: false, receivedAt: { $gte: since } } }, { $group: { _id: day('receivedAt'), n: { $sum: 1 } } }]),
       EmailLog.aggregate([{ $match: { status: 'sent' } }, { $group: { _id: '$step', n: { $sum: 1 } } }]),
-      Enrollment.aggregate([{ $match: { status: 'replied', repliedAfterStep: { $gte: 1 } } }, { $group: { _id: '$repliedAfterStep', n: { $sum: 1 } } }]),
+      Reply.aggregate([{ $match: { isAutoReply: false, afterStep: { $gte: 1 }, contact: { $ne: null } } }, { $group: { _id: '$afterStep', n: { $sum: 1 } } }]), // reply emails per email of the sequence (= what the Replies list shows)
       Campaign.find().sort({ updatedAt: -1 }).limit(5).lean(),
       sentToday(),
       Reply.countDocuments({ handled: false, isAutoReply: false }),
@@ -75,6 +114,8 @@ router.get(
       if (req.query.handled === 'true') filter.handled = true;
       if (req.query.handled === 'false') filter.handled = false;
     }
+    const step = Number(req.query.step);
+    if (Number.isInteger(step) && step >= 1 && step <= 50) filter.afterStep = step; // replies to one email of the sequence (dashboard)
     const [list, autoCount] = await Promise.all([
       Reply.find(filter).sort({ receivedAt: -1 }).limit(200)
         .populate({ path: 'contact', select: 'name email company title companyId', populate: { path: 'companyId', select: 'name stage' } })

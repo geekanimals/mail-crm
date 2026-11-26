@@ -1,7 +1,7 @@
 'use client';
 // Replies: everyone who answered (follow-ups stopped automatically). Out-of-office auto-replies have their own tab -
 // they do NOT stop follow-ups and do NOT move the company in the pipeline.
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { LuCheck, LuRefreshCw, LuReply } from 'react-icons/lu';
 import { api, date, notify, stepName } from '@/lib/api';
 
@@ -9,16 +9,35 @@ const STAGE = { cold: 'Cold lead', hot: 'Hot lead', opportunity: 'Opportunity', 
 
 export default function RepliesPage() {
   const [handled, setHandled] = useState('false');
+  const [step, setStep] = useState(''); // replies to one email of the sequence (from the dashboard)
+  const latest = useRef(0);
   const [list, setList] = useState(null);
   const [checking, setChecking] = useState(false);
 
   const load = useCallback(
-    () => api('/api/replies', { query: handled === 'auto' ? { type: 'auto' } : { handled } }).then(setList).catch((e) => notify(e.message, 'error')),
-    [handled]
+    () => {
+      const ask = ++latest.current; // only the newest request may fill the list (an older, slower one is dropped)
+      return api('/api/replies', { query: handled === 'auto' ? { type: 'auto' } : { handled, step } })
+        .then((r) => ask === latest.current && setList(r))
+        .catch((e) => notify(e.message, 'error'));
+    },
+    [handled, step]
   );
   useEffect(() => {
     load();
   }, [load]);
+  // opened from the dashboard: /replies?handled=all (every reply) and &step=N (replies to one email)
+  useEffect(() => {
+    const qs = new URLSearchParams(window.location.search);
+    const h = qs.get('handled');
+    const n = Number(qs.get('step'));
+    if (h || n) {
+      setTimeout(() => {
+        if (h) setHandled(h === 'all' ? '' : ['true', 'false', 'auto'].includes(h) ? h : 'false');
+        if (Number.isInteger(n) && n >= 1) setStep(n);
+      }, 0);
+    }
+  }, []);
 
   const checkNow = async () => {
     setChecking(true);
@@ -50,6 +69,12 @@ export default function RepliesPage() {
             <button key={l} className={handled === v ? 'on' : ''} onClick={() => setHandled(v)}>{l}</button>
           ))}
         </div>
+        {step && handled !== 'auto' && (
+          <div className="rp-filter">
+            Only replies to <b>{stepName(step)}</b>
+            <button type="button" onClick={() => setStep('')} aria-label="Show replies to every email">×</button>
+          </div>
+        )}
         {!list ? (
           <p className="muted">Loading…</p>
         ) : list.length === 0 ? (
@@ -87,6 +112,9 @@ export default function RepliesPage() {
 }
 
 const css = `
+.rp-filter { display: inline-flex; align-items: center; gap: 8px; margin: 4px 0 10px; padding: 6px 8px 6px 12px; border-radius: 99px; background: var(--c-50, #f0fbfe); border: 1px solid var(--c-100); font-size: 13px; color: #475569; }
+.rp-filter button { border: 0; background: none; font-size: 17px; line-height: 1; cursor: pointer; color: #64748b; padding: 0 4px; }
+.rp-filter button:hover { color: #e11d48; }
 .rp-item { display: flex; gap: 14px; padding: 16px 0; border-bottom: 1px solid rgba(148,163,184,.18); }
 .rp-item:last-child { border-bottom: 0; }
 .rp-item.done { opacity: .65; }
