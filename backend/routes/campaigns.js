@@ -65,10 +65,32 @@ router.get(
 
 router.get(
   '/',
-  ah(async (_req, res) => {
-    const list = await Campaign.find().sort({ createdAt: -1 }).lean();
+  ah(async (req, res) => {
+    if (req.query.page === undefined) {
+      const list = await Campaign.find().sort({ createdAt: -1 }).lean();
+      const stats = await campaignStats(list.map((c) => c._id));
+      return res.json(list.map((c) => ({ ...c, stats: stats[c._id] })));
+    }
+    // dashboard "Campaign history": one page at a time, with search and a status filter
+    const limit = 10;
+    const page = Math.max(1, Math.floor(Number(req.query.page)) || 1);
+    const filter = {};
+    if (['draft', 'active', 'paused', 'completed'].includes(req.query.status)) filter.status = req.query.status;
+    const q = String(req.query.q || '').trim().slice(0, 100);
+    if (q) filter.name = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+    const [list, total, counts] = await Promise.all([
+      Campaign.find(filter).sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit).lean(),
+      Campaign.countDocuments(filter),
+      Campaign.aggregate([...(q ? [{ $match: { name: filter.name } }] : []), { $group: { _id: '$status', n: { $sum: 1 } } }]),
+    ]);
     const stats = await campaignStats(list.map((c) => c._id));
-    res.json(list.map((c) => ({ ...c, stats: stats[c._id] })));
+    res.json({
+      list: list.map((c) => ({ _id: c._id, name: c.name, status: c.status, createdAt: c.createdAt, fromFile: c.fromFile, emails: c.fromFile ? null : 1 + (c.followUps || []).length, stats: stats[c._id] })),
+      total,
+      page,
+      pages: Math.max(1, Math.ceil(total / limit)),
+      counts: Object.fromEntries(counts.map((c) => [c._id, c.n])),
+    });
   })
 );
 

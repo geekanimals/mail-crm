@@ -1,6 +1,8 @@
 'use client';
-// Campaigns: list, create/edit (first email + follow-ups), start / pause, see who replied
+// Campaigns: create/edit (first email + follow-ups), start / pause, see who replied.
+// The list of campaigns lives on the dashboard ("Campaign history"); this page opens one (?open=id) or a new one (?new=1).
 import { useCallback, useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { LuChevronLeft, LuPause, LuPencil, LuPlay, LuPlus, LuTrash2 } from 'react-icons/lu';
 import { api, date, num, notify, stepName } from '@/lib/api';
 
@@ -8,64 +10,28 @@ import { api, date, num, notify, stepName } from '@/lib/api';
 const fromFixed = (texts, every) => texts.map((body) => ({ delayDays: every, body }));
 
 export default function CampaignsPage() {
-  const [list, setList] = useState(null);
+  const router = useRouter();
   const [edit, setEdit] = useState(null); // campaign being created/edited
   const [openId, setOpenId] = useState(null);
-
-  const load = useCallback(() => api('/api/campaigns').then(setList).catch((e) => notify(e.message, 'error')), []);
-  useEffect(() => {
-    load();
-    const id = new URLSearchParams(window.location.search).get('open');
-    if (id) setTimeout(() => setOpenId(id), 0);
-  }, [load]);
 
   const newCampaign = async () => {
     const d = await api('/api/campaigns/defaults').catch(() => ({ intervalDays: 2, followUps: [] }));
     setOpenId(null);
     setEdit({ name: '', subject: '', body: 'Hi {{firstName}},\n\n\n\nBest regards,\n{{senderName}}', useContactContent: true, followUps: fromFixed(d.followUps || [], d.intervalDays || 2) });
   };
+  useEffect(() => {
+    const qs = new URLSearchParams(window.location.search);
+    const id = qs.get('open');
+    if (id) setTimeout(() => setOpenId(id), 0);
+    else if (qs.get('new')) setTimeout(() => newCampaign(), 0);
+    else router.replace('/#history'); // the list is on the dashboard
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (edit) return <Editor campaign={edit} onClose={(saved) => { setEdit(null); load(); if (saved) setOpenId(saved); }} />;
-  if (openId) return <Detail id={openId} onBack={() => { setOpenId(null); load(); }} onEdit={(c) => setEdit(c)} />;
+  const back = () => router.push('/#history');
+  if (edit) return <Editor campaign={edit} onClose={(saved) => { setEdit(null); if (saved) setOpenId(saved); else if (!openId) back(); }} />;
+  if (openId) return <Detail id={openId} onBack={back} onEdit={(c) => setEdit(c)} />;
 
-  return (
-    <>
-      <style>{css}</style>
-      <div className="page-title">
-        <div>
-          <h1>Campaigns</h1>
-          <p>First email + automatic follow-ups. Stops the moment someone replies.</p>
-        </div>
-        <button className="btn" onClick={newCampaign}><LuPlus /> Create Campaign</button>
-      </div>
-      <div className="card">
-        {!list ? (
-          <p className="muted">Loading…</p>
-        ) : list.length === 0 ? (
-          <p className="empty">No campaigns yet. Create your first one.</p>
-        ) : (
-          <div className="table-wrap">
-            <table className="cards">
-              <thead><tr><th>Campaign</th><th>Status</th><th>Emails</th><th>Contacts</th><th>Sent</th><th>Opened</th><th>Replied</th></tr></thead>
-              <tbody>
-                {list.map((c) => (
-                  <tr key={c._id} className="cp-row" onClick={() => setOpenId(c._id)}>
-                    <td><b>{c.name}</b><small>{date(c.createdAt)}</small></td>
-                    <td data-label="Status"><span className={`badge ${c.status}`}>{c.status}</span></td>
-                    <td data-label="Emails">{c.fromFile ? 'From file' : 1 + c.followUps.length}</td>
-                    <td data-label="Contacts">{num(c.stats.contacts)}</td>
-                    <td data-label="Sent">{num(c.stats.sent)}</td>
-                    <td data-label="Opened">{c.stats.openRate}%</td>
-                    <td data-label="Replied">{num(c.stats.replied)} ({c.stats.replyRate}%)</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-    </>
-  );
+  return <p className="muted">Opening…</p>; // the list of campaigns is on the dashboard (Campaign history)
 }
 
 /* ---------- create / edit ---------- */
@@ -196,7 +162,7 @@ function Detail({ id, onBack, onEdit }) {
   return (
     <>
       <style>{css}</style>
-      <button className="cp-back" onClick={onBack}><LuChevronLeft /> All campaigns</button>
+      <button className="cp-back" onClick={onBack}><LuChevronLeft /> Campaign history</button>
       <div className="page-title">
         <div>
           <h1>{c.name} <span className={`badge ${c.status}`}>{c.status}</span></h1>
