@@ -13,6 +13,21 @@ export default function SettingsPage() {
   const [gapPlan, setGapPlan] = useState(null); // preview: what the change would move
   const [gapBusy, setGapBusy] = useState(false);
   const [pend, setPend] = useState(''); // hour older emails start
+  const [checklist, setChecklist] = useState(null); // convert-to-account checklist (editable copy)
+  const [newItem, setNewItem] = useState('');
+  useEffect(() => {
+    api('/api/companies/convert/checklist').then((r) => setChecklist(r.items)).catch(() => {});
+  }, []);
+  const saveChecklist = async (items) => {
+    try {
+      const r = await api('/api/settings/convert-checklist', { method: 'PUT', body: { items } });
+      setChecklist(r.items);
+      setNewItem('');
+      notify('Checklist saved');
+    } catch (e) {
+      notify(e.message, 'error');
+    }
+  };
   const hourLabel = (h) => `${((Number(h) + 11) % 12) + 1}:00 ${Number(h) < 12 ? 'AM' : 'PM'}`;
   const savePending = async () => {
     try {
@@ -169,6 +184,25 @@ export default function SettingsPage() {
         </div>
 
         <div className="card">
+          <h2>Convert to account: checklist</h2>
+          <p className="muted small">Every item must be ticked before an Opportunity becomes an account. A file can be attached to each.</p>
+          {checklist && (
+            <div className="st-check">
+              {checklist.map((it, i) => (
+                <div key={it} className="st-checkrow">
+                  <span>{i + 1}. {it}</span>
+                  <button className="btn ghost sm" disabled={checklist.length === 1} title={checklist.length === 1 ? 'Keep at least one item' : 'Remove'} onClick={() => saveChecklist(checklist.filter((x) => x !== it))}>Remove</button>
+                </div>
+              ))}
+              <form className="st-gaprow" onSubmit={(e) => { e.preventDefault(); if (newItem.trim()) saveChecklist([...checklist, newItem.trim()]); }}>
+                <input value={newItem} maxLength={80} placeholder="Add an item, e.g. Signed contract" onChange={(e) => setNewItem(e.target.value)} />
+                <button className="btn soft sm" disabled={!newItem.trim()}>Add</button>
+              </form>
+            </div>
+          )}
+        </div>
+
+        <div className="card">
           <h2>CC on every email</h2>
           <p className="muted small st-sub">These addresses get a copy (CC) of every email and follow-up. Separate several addresses with commas. Leave empty for no CC. The default is <code>MAIL_CC</code> in .env{s.ccEnv ? ` (${s.ccEnv})` : ''}.</p>
           <form className="row" onSubmit={(e) => { e.preventDefault(); call('/api/settings/cc', { cc }, 'CC saved'); }}>
@@ -244,4 +278,7 @@ const css = `
 .st-list { list-style: none; display: flex; flex-direction: column; gap: 10px; font-size: 13.5px; }
 .page-title code { background: #f1f5f9; padding: 1px 6px; border-radius: 6px; }
 @media (max-width: 900px) { .st-grid { grid-template-columns: 1fr; } .st-pause .btn { width: 100%; } }
+.st-check { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.st-checkrow { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 0; border-bottom: 1px solid #f1f5f9; font-size: 14px; }
+.st-check form input { flex: 1; min-width: 0; }
 `;

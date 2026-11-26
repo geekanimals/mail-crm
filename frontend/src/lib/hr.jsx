@@ -48,13 +48,13 @@ const toBase64 = (file) =>
   });
 
 /** upload one file -> { id, name, size, type }. forUser = employee id (admin uploading for someone) */
-export async function uploadFile(file, forUser, deal, idea) {
+export async function uploadFile(file, forUser, deal, idea, company) {
   if (file.size > 10 * 1024 * 1024) throw new Error(`${file.name} is bigger than 10 MB`);
   const data = await toBase64(file);
   const res = await fetch(`${API_URL}/api/files`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` },
-    body: JSON.stringify({ name: file.name, type: file.type, data, for: forUser, deal, idea }),
+    body: JSON.stringify({ name: file.name, type: file.type, data, for: forUser, deal, idea, company }),
   });
   const out = await res.json().catch(() => null);
   if (!res.ok) throw new Error(out?.error || `Upload failed (${res.status})`);

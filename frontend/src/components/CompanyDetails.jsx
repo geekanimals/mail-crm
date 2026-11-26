@@ -3,9 +3,10 @@
 // The same view everywhere: the lead page (inline) and the side panel.
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
-import { LuBuilding2, LuCopy, LuExternalLink, LuHandshake, LuKeyRound, LuPlus, LuTrash2, LuUserPlus, LuX } from 'react-icons/lu';
+import { LuBuilding2, LuCheck, LuCopy, LuExternalLink, LuHandshake, LuKeyRound, LuMail, LuPaperclip, LuPlus, LuTrash2, LuUserPlus, LuX } from 'react-icons/lu';
 import { api, date, notify } from '@/lib/api';
 import { label, Value } from '@/components/PersonDetails';
+import { openFile, uploadFile } from '@/lib/hr';
 
 // sheet columns about the person (shown on their own tab), not the company
 const PERSON_COL = /^(dm[\s_]|email[\s_]|e-?mail$|name$|first[\s_]?name|last[\s_]?name|phone$|designation$)/i;
@@ -54,6 +55,46 @@ export default function CompanyDetails({ id, onClose, convertFirst, inline = fal
   const [conv, setConv] = useState(null); // convert-to-account / client login form
   const [shared, setShared] = useState(null); // login details to give the client (shown once)
   const [busy, setBusy] = useState(false); // converting / saving the login (Bounty can take a few seconds)
+  const [check, setCheck] = useState(null); // convert checklist: [{ label, done, file }]
+  const [links, setLinks] = useState(null); // { crm, bounty } for the login message
+  const [mailing, setMailing] = useState(false);
+  useEffect(() => {
+    if (!conv || check) return;
+    api('/api/companies/convert/checklist')
+      .then((r) => {
+        setCheck(r.items.map((label) => ({ label, done: false, file: null })));
+        setLinks(r.links);
+      })
+      .catch((e) => notify(e.message, 'error'));
+  }, [conv, check]);
+  const tick = (i, patch) => setCheck((list) => list.map((x, j) => (j === i ? { ...x, ...patch } : x)));
+  const attach = async (i, file) => {
+    if (!file) return;
+    tick(i, { uploading: true });
+    try {
+      const f = await uploadFile(file, undefined, undefined, undefined, id);
+      tick(i, { file: { id: f.id, name: f.name }, done: true, uploading: false });
+    } catch (e) {
+      notify(e.message, 'error');
+      tick(i, { uploading: false });
+    }
+  };
+  const allTicked = Boolean(check?.length) && check.every((x) => x.done);
+  const loginText = (s) => {
+    const crm = links?.crm || `${window.location.origin}/login`;
+    return [`Geek Creative Agency - your account`, `Geek CRM: ${crm}`, ...(s.bounty ? [`Bounty brand dashboard: ${links?.bounty || 'https://bounty.geekcreativeagency.com/brands'}`] : []), `Email: ${s.email}`, `Password: ${s.password}`, ...(s.bounty ? ['The same email and password open both.'] : [])].join('\n');
+  };
+  const mailLogin = async () => {
+    setMailing(true);
+    try {
+      const r = await api(`/api/companies/${id}/client-login/mail`, { method: 'POST', body: { password: shared.password } });
+      notify(`Login emailed to ${r.to}`);
+      setShared({ ...shared, mailedTo: r.to });
+    } catch (e) {
+      notify(e.message, 'error');
+    }
+    setMailing(false);
+  };
 
   const load = useCallback(() => {
     api(`/api/companies/${id}`)
@@ -89,10 +130,14 @@ export default function CompanyDetails({ id, onClose, convertFirst, inline = fal
     if (busy) return;
     setBusy(true);
     try {
-      const r = await api(`/api/companies/${id}/convert`, { method: 'POST', body: conv.email ? conv : {} });
+      if (!allTicked) throw new Error('Tick everything on the checklist first');
+      const checklist = check.map(({ label: l, done, file }) => ({ label: l, done, file }));
+      const r = await api(`/api/companies/${id}/convert`, { method: 'POST', body: { ...(conv.email ? conv : {}), checklist } });
       notify(`${r.company.name} is now an account`);
+      if (r.links) setLinks(r.links);
       if (r.clientLogin?.password) setShared({ email: r.clientLogin.email, password: r.clientLogin.password, bounty: r.clientLogin.bounty });
       setConv(null);
+      setCheck(null);
       load();
     } catch (err) {
       notify(err.message, 'error');
@@ -133,9 +178,16 @@ export default function CompanyDetails({ id, onClose, convertFirst, inline = fal
           <div className="pl-shared">
             <b>Client login — share this with the client (password is shown only now)</b>
             {shared.bounty && <span className="small">The same email and password also open their Bounty brand account.</span>}
-            <div className="pl-cred"><span>Website</span><code>{window.location.origin}/login</code><span>Email</span><code>{shared.email}</code><span>Password</span><code>{shared.password}</code></div>
+            <div className="pl-cred">
+              <span>Geek CRM</span><code><a href={links?.crm || `${window.location.origin}/login`} target="_blank" rel="noopener noreferrer">{links?.crm || `${window.location.origin}/login`}</a></code>
+              {shared.bounty && <><span>Bounty</span><code><a href={links?.bounty || 'https://bounty.geekcreativeagency.com/brands'} target="_blank" rel="noopener noreferrer">{links?.bounty || 'https://bounty.geekcreativeagency.com/brands'}</a></code></>}
+              <span>Email</span><code>{shared.email}</code>
+              <span>Password</span><code>{shared.password}</code>
+            </div>
+            {shared.mailedTo && <span className="small pl-mailed"><LuCheck /> Emailed to {shared.mailedTo}</span>}
             <div className="row">
-              <button className="btn soft sm" onClick={() => copy(`Geek CRM - your account\n${window.location.origin}/login\nEmail: ${shared.email}\nPassword: ${shared.password}`)}><LuCopy /> Copy</button>
+              <button className="btn soft sm" onClick={() => copy(loginText(shared))}><LuCopy /> Copy</button>
+              <button className="btn soft sm" disabled={mailing} onClick={mailLogin}><LuMail /> {mailing ? 'Sending…' : shared.mailedTo ? 'Mail it again' : `Mail it to ${shared.email}`}</button>
               <button className="btn ghost sm" onClick={() => setShared(null)}>Done</button>
             </div>
           </div>
@@ -147,6 +199,23 @@ export default function CompanyDetails({ id, onClose, convertFirst, inline = fal
           conv ? (
             <form className="pl-convertbox" onSubmit={convert}>
               <b><LuHandshake /> Convert {c.name} to an account</b>
+              <div className="pl-check">
+                <b className="small">Checklist: tick everything before converting</b>
+                {!check && <p className="small muted">Loading…</p>}
+                {check?.map((x, i) => (
+                  <div key={x.label} className={`pl-checkrow ${x.done ? 'done' : ''}`}>
+                    <label><input type="checkbox" checked={x.done} onChange={(e) => tick(i, { done: e.target.checked })} /> {x.label}</label>
+                    <span className="pl-checkfile">
+                      {x.file ? <button type="button" className="pl-filelink" onClick={() => openFile(x.file)}><LuPaperclip /> {x.file.name}</button> : null}
+                      <label className="btn ghost sm">
+                        <LuPaperclip /> {x.uploading ? 'Uploading…' : x.file ? 'Change file' : 'Attach file'}
+                        <input type="file" hidden disabled={x.uploading} onChange={(e) => attach(i, e.target.files?.[0])} />
+                      </label>
+                    </span>
+                  </div>
+                ))}
+                {check && !allTicked && <p className="small muted">{check.filter((x) => !x.done).length} left. A file is optional.</p>}
+              </div>
               <p className="small muted">Optional: create a login for the client so they can see the work your team is doing for them. Leave email empty to skip.</p>
               <div className="pl-grid">
                 <label className="field">Client name<input value={conv.name} onChange={(e) => setConv({ ...conv, name: e.target.value })} /></label>
@@ -160,7 +229,7 @@ export default function CompanyDetails({ id, onClose, convertFirst, inline = fal
                 )}
               </div>
               <p className="small muted">Converting gives the estimate task to its owner (see Deals → Step owners).</p>
-              <div className="row"><button className="btn sm" disabled={busy}><LuHandshake /> {busy ? 'Converting…' : 'Convert to account'}</button><button type="button" className="btn ghost sm" onClick={() => setConv(null)}>Cancel</button></div>
+              <div className="row"><button className="btn sm" disabled={busy || !allTicked} title={allTicked ? '' : 'Tick everything on the checklist first'}><LuHandshake /> {busy ? 'Converting…' : 'Convert to account'}</button><button type="button" className="btn ghost sm" onClick={() => { setConv(null); setCheck(null); }}>Cancel</button></div>
             </form>
           ) : (
             <button className="btn pl-convertbtn" onClick={() => setConv({ name: d.contacts[0]?.name || c.name, email: d.contacts.find((p) => p.email)?.email || '', password: makePassword() })}><LuHandshake /> Convert to account</button>
@@ -192,6 +261,18 @@ export default function CompanyDetails({ id, onClose, convertFirst, inline = fal
             ) : (
               <button className="btn soft sm" onClick={() => setConv({ name: d.contacts[0]?.name || c.name, email: d.contacts.find((p) => p.email)?.email || '', password: makePassword() })}>Create client login</button>
             )}
+          </div>
+        )}
+
+        {c.onboarding?.items?.length > 0 && (
+          <div className="pl-check pl-checkdone">
+            <b className="small">Checklist when converted{c.onboarding.at ? ` · ${date(c.onboarding.at)}` : ''}</b>
+            {c.onboarding.items.map((x) => (
+              <div key={x.label} className="pl-checkrow done">
+                <span><LuCheck /> {x.label}</span>
+                {x.file?.id && <button type="button" className="pl-filelink" onClick={() => openFile(x.file)}><LuPaperclip /> {x.file.name}</button>}
+              </div>
+            ))}
           </div>
         )}
 
@@ -475,6 +556,18 @@ export const plCss = `
 }
 
 .pl-inline-wrap { display: block; }
+.pl-check { align-self: stretch; width: 100%; box-sizing: border-box; text-align: left; align-items: stretch; display: flex; flex-direction: column; gap: 6px; background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 12px 14px; margin: 8px 0; }
+.pl-checkrow { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding: 6px 0; border-bottom: 1px solid #f1f5f9; font-size: 14px; }
+.pl-checkrow:last-of-type { border-bottom: 0; }
+.pl-checkrow label:first-child, .pl-checkrow > span:first-child { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-weight: 600; color: #334155; }
+.pl-checkrow.done label:first-child, .pl-checkrow.done > span:first-child { color: #15803d; }
+.pl-checkrow input[type=checkbox] { width: 17px; height: 17px; accent-color: #16a34a; }
+.pl-checkfile { display: inline-flex; align-items: center; gap: 8px; }
+.pl-checkfile .btn { cursor: pointer; display: inline-flex; align-items: center; gap: 4px; }
+.pl-filelink { background: none; border: 0; padding: 0; font: inherit; font-size: 12.5px; color: var(--c-700); font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pl-checkdone { background: #f0fdf4; border-color: #bbf7d0; }
+.pl-mailed { color: #15803d; display: inline-flex; align-items: center; gap: 4px; font-weight: 600; }
+.pl-cred a { color: var(--c-700); }
 .pl-fromsheet { font-style: normal; font-size: 11px; font-weight: 600; color: #a16207; background: #fef9c3; border-radius: 99px; padding: 1px 8px; margin-left: 8px; }
 .pl-sheet { margin: 0; border: 1px solid #e2e8f0; border-radius: 14px; padding: 6px 14px; }
 .pl-sheetrow { display: grid; grid-template-columns: 190px 1fr; gap: 12px; padding: 7px 0; border-bottom: 1px solid #f1f5f9; font-size: 13.5px; }

@@ -206,6 +206,18 @@ router.put(
   })
 );
 
+// the checklist that must be ticked before an Opportunity is converted to an account
+router.put(
+  '/settings/convert-checklist',
+  ah(async (req, res) => {
+    const items = (Array.isArray(req.body?.items) ? req.body.items : []).map((s) => String(s || '').trim().slice(0, 80)).filter(Boolean);
+    const unique = [...new Map(items.map((s) => [s.toLowerCase(), s])).values()].slice(0, 20);
+    if (!unique.length) throw fail(400, 'Keep at least one item');
+    await setSetting('convertChecklist', unique);
+    res.json({ items: unique });
+  })
+);
+
 // the hour older emails (follow-ups, first emails left from earlier days) start; today's upload always goes at once
 router.put(
   '/settings/pending-start',

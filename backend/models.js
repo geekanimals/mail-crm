@@ -75,6 +75,12 @@ export const Company = model(
       tasks: [{ member: String, task: String, done: { type: Boolean, default: false }, updatedAt: { type: Date, default: () => new Date() } }],
       messages: [{ author: String, role: { type: String, enum: ['admin', 'team', 'client'] }, text: String, createdAt: { type: Date, default: () => new Date() } }],
       fields: [{ _id: false, k: String, v: String }], // original sheet row
+      // the checklist ticked when it was converted to an account (GST certificate, campaign brief, estimate, WhatsApp group...)
+      onboarding: {
+        items: [{ _id: false, label: String, done: Boolean, file: { _id: false, id: String, name: String } }],
+        at: Date,
+        by: String,
+      },
     },
     { timestamps: true }
   )

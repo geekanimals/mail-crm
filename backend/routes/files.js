@@ -18,7 +18,14 @@ const MAX = 10 * 1024 * 1024;
 const OK_EXT = /\.(pdf|png|jpe?g|webp|gif|heic|docx?|xlsx?|csv|pptx?|txt|zip)$/i;
 
 /** the employee a request may act for: themselves, or anyone (admin) */
-async function ownerFor(req, wanted, deal, idea) {
+async function ownerFor(req, wanted, deal, idea, company) {
+  // a company document from the convert checklist (GST certificate, brief, estimate): admin only
+  if (company) {
+    if (req.role !== 'admin') throw fail(403, 'Only the admin can add company documents');
+    const c = mongoose.isValidObjectId(company) ? await mongoose.model('Company').findById(company).select('_id').lean() : null;
+    if (!c) throw fail(400, 'Company not found');
+    return c._id;
+  }
   // an Idea Bucket attachment: the person who sent the idea, or the admin
   if (idea) {
     const i = mongoose.isValidObjectId(idea) ? await mongoose.model('Idea').findById(idea).select('author').lean() : null;
@@ -56,7 +63,7 @@ async function mayRead(req, f) {
 router.post(
   '/',
   ah(async (req, res) => {
-    const owner = await ownerFor(req, req.body?.for, req.body?.deal, req.body?.idea);
+    const owner = await ownerFor(req, req.body?.for, req.body?.deal, req.body?.idea, req.body?.company);
     const name = str(req.body?.name, 200).replace(/[\\/]/g, '_') || 'file';
     if (!OK_EXT.test(name)) throw fail(400, 'This file type is not allowed (use PDF, image, Word, Excel, PowerPoint, CSV, TXT or ZIP)');
     const data = str(req.body?.data, 15 * 1024 * 1024).replace(/^data:[^,]*,/, '');

@@ -9,6 +9,18 @@ import { Deal, startDeal } from '../lifecycle.js';
 import { stageChanged } from '../models.js';
 import { mapColumns, parseAccounts, parseCSV, parseOpportunity, rowToLead, saveLead, statusFromSheet } from '../sheets.js';
 import { ah, checkId, fail, str, validEmail } from '../utils.js';
+import { config } from '../config.js';
+import { escapeHtml, sendMail } from '../mail.js';
+import { getSetting } from '../models.js';
+
+/* ---------- convert checklist: everything must be ticked before an Opportunity becomes an account ---------- */
+export const DEFAULT_CHECKLIST = ['GST certificate', 'Campaign brief', 'Estimate', 'WhatsApp group'];
+export async function convertChecklist() {
+  const list = await getSetting('convertChecklist', null);
+  return Array.isArray(list) && list.length ? list : DEFAULT_CHECKLIST;
+}
+export const BOUNTY_BRANDS_URL = 'https://bounty.geekcreativeagency.com/brands';
+const crmLoginUrl = () => `${config.frontendUrls.find((u) => !/localhost|127\.0\.0\.1/.test(u)) || config.frontendUrls[0]}/login`;
 
 const router = Router();
 // team members come from the Team page (people with a team login)
@@ -28,6 +40,12 @@ const details = (b = {}) => {
 
 /* ---------- team members ---------- */
 router.get('/team', ah(async (_req, res) => res.json({ team: await getTeam() })));
+// the checklist the convert form shows, and the links put in the login message
+router.get(
+  '/convert/checklist',
+  ah(async (_req, res) => res.json({ items: await convertChecklist(), links: { crm: crmLoginUrl(), bounty: BOUNTY_BRANDS_URL } }))
+);
+
 
 /* ---------- every open task, by team member ---------- */
 router.get(
@@ -205,12 +223,66 @@ router.post(
     const c = await Company.findById(checkId(req.params.id));
     if (!c) throw fail(404, 'Company not found');
     if (c.stage !== 'opportunity') throw fail(400, 'Only an Opportunity can be converted to an account. Move it to Opportunity first.');
+    // every checklist item must be ticked (a file is optional)
+    const need = await convertChecklist();
+    const sent = Array.isArray(req.body?.checklist) ? req.body.checklist : [];
+    const items = need.map((label) => {
+      const s = sent.find((x) => String(x?.label || '').trim().toLowerCase() === label.toLowerCase());
+      const file = s?.file?.id ? { id: str(s.file.id, 40), name: str(s.file.name, 200) } : undefined;
+      return { label, done: s?.done === true, ...(file ? { file } : {}) };
+    });
+    const missing = items.filter((i) => !i.done).map((i) => i.label);
+    if (missing.length) throw fail(400, `Tick everything on the checklist first: ${missing.join(', ')}`);
     const login = req.body?.email ? await saveClientLogin(c, req.body) : null; // login is optional
+    c.onboarding = { items, at: new Date(), by: req.user || 'admin' };
     c.stage = 'account';
     await c.save();
     const contract = req.body?.contract?.id ? req.body.contract : null;
     const deal = await startDeal(c, { by: req.user, contract }); // Aanchal gets the estimate task
-    res.json({ company: c, clientLogin: login && { ...login.user.toJSON(), password: login.password, bounty: login.bounty }, deal: deal._id });
+    res.json({ company: c, clientLogin: login && { ...login.user.toJSON(), password: login.password, bounty: login.bounty }, deal: deal._id, links: { crm: crmLoginUrl(), bounty: BOUNTY_BRANDS_URL } });
+  })
+);
+
+
+// email the client their login (the password is shown only once, so the admin's screen sends it back here)
+router.post(
+  '/:id/client-login/mail',
+  ah(async (req, res) => {
+    const c = await Company.findById(checkId(req.params.id)).lean();
+    if (!c) throw fail(404, 'Company not found');
+    const u = await User.findOne({ role: 'client', companyId: c._id }).lean();
+    if (!u) throw fail(400, 'This company has no client login yet');
+    const password = str(req.body?.password, 200);
+    if (!password) throw fail(400, 'The password is needed to send the login');
+    const to = validEmail(req.body?.to) || u.email;
+    const bounty = Boolean(u.bountyMemberId);
+    const crm = crmLoginUrl();
+    const lines = [
+      `Hi ${u.name || c.name},`,
+      '',
+      `Your Geek Creative Agency account for ${c.name} is ready. You can see the work we are doing for you here:`,
+      '',
+      `Geek CRM (your campaign work, tasks and messages): ${crm}`,
+      ...(bounty ? [`Bounty brand dashboard (creators and content): ${BOUNTY_BRANDS_URL}`] : []),
+      '',
+      `Email: ${u.email}`,
+      `Password: ${password}`,
+      '',
+      bounty ? 'The same email and password open both.' : '',
+      'Please keep these details safe.',
+      '',
+      'Best regards,',
+      config.fromName,
+    ].filter((l, i, a) => !(l === '' && a[i - 1] === ''));
+    const html = lines
+      .map((l) => escapeHtml(l).replace(/(https?:\/\/\S+)/g, '<a href="$1">$1</a>'))
+      .join('<br>');
+    try {
+      await sendMail({ to, name: u.name, email: { subject: `Your Geek Creative Agency login for ${c.name}`, text: lines.join('\n'), html: `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.6">${html}</div>`, bulk: false } });
+    } catch (e) {
+      throw fail(502, `The email could not be sent: ${e.message}`);
+    }
+    res.json({ ok: true, to });
   })
 );
 
