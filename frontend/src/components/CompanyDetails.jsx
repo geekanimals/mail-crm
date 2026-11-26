@@ -24,10 +24,31 @@ const makePassword = () => {
 const copy = (text) => navigator.clipboard?.writeText(text).then(() => notify('Copied')).catch(() => {});
 const isUrl = (v) => /^https?:\/\/\S+$/i.test(String(v || '').trim());
 
+/** company details that the people's uploaded sheets already have: shown in empty boxes (saved only with "Save details") */
+const fromSheet = (contacts) => {
+  const get = (names) => {
+    for (const p of contacts) for (const f of p.fields || []) {
+      const k = label(f.k).toLowerCase();
+      const v = String(f.v ?? '').trim();
+      if (names.includes(k) && v && !/^(none|n\/a|-|not verified|unknown)$/i.test(v)) return v;
+    }
+    return '';
+  };
+  const hq = get(['headcount evidence', 'headcount']).match(/\bHQ\s+([^()]+?)\s*(?:\(|$)/i)?.[1]?.replace(/[,\s]+$/, '') || '';
+  const li = get(['linkedin url', 'company linkedin', 'company linkedin url', 'linkedin']);
+  return {
+    industry: get(['service category', 'industry', 'category', 'sector']),
+    location: get(['location', 'city', 'hq', 'headquarters']) || hq,
+    linkedin: /linkedin\.com\/company/i.test(li) ? li : '',
+    website: get(['website', 'company website']),
+  };
+};
+
 /* ---------- one company: details, people, team tasks ---------- */
 export default function CompanyDetails({ id, onClose, convertFirst, inline = false, onPerson, onChanged }) {
   const [d, setD] = useState(null);
   const [info, setInfo] = useState(null);
+  const [sheetKeys, setSheetKeys] = useState([]); // boxes filled from the sheet, not saved yet
   const [member, setMember] = useState(null);
   const [task, setTask] = useState({ member: '', task: '' });
   const [conv, setConv] = useState(null); // convert-to-account / client login form
@@ -39,7 +60,10 @@ export default function CompanyDetails({ id, onClose, convertFirst, inline = fal
       .then((r) => {
         setD(r);
         if (convertFirst && r.company.stage === 'opportunity') setConv((v) => v || { name: r.contacts[0]?.name || r.company.name, email: r.contacts.find((p) => p.email)?.email || '', password: makePassword() });
-        setInfo({ name: r.company.name, stage: r.company.stage, notes: r.company.notes || '', ...Object.fromEntries(INFO.map(([k]) => [k, r.company[k] || ''])) });
+        const sheet = fromSheet(r.contacts || []);
+        const filled = INFO.map(([k]) => k).filter((k) => !r.company[k] && sheet[k]);
+        setSheetKeys(filled);
+        setInfo({ name: r.company.name, stage: r.company.stage, notes: r.company.notes || '', ...Object.fromEntries(INFO.map(([k]) => [k, r.company[k] || sheet[k] || ''])) });
       })
       .catch((e) => notify(e.message, 'error'));
   }, [id, convertFirst]);
@@ -179,7 +203,8 @@ export default function CompanyDetails({ id, onClose, convertFirst, inline = fal
             </select>
           </label>
           {INFO.map(([k, l]) => (
-            <label className="field" key={k}>{l}
+            <label className="field" key={k}>
+              <span>{l}{sheetKeys.includes(k) && <em className="pl-fromsheet">from the sheet · Save details to keep</em>}</span>
               <span className="pl-inputlink">
                 <input value={info[k]} placeholder={HINT[k] || ''} onChange={(e) => setInfo({ ...info, [k]: e.target.value })} />
                 {isUrl(info[k]) && <a href={info[k]} target="_blank" rel="noopener noreferrer" title="Open"><LuExternalLink /></a>}
@@ -187,7 +212,10 @@ export default function CompanyDetails({ id, onClose, convertFirst, inline = fal
             </label>
           ))}
           <label className="field pl-wide">Notes<textarea rows={4} value={info.notes} onChange={(e) => setInfo({ ...info, notes: e.target.value })} /></label>
-          <div className="pl-wide"><button className="btn sm">Save details</button></div>
+          <div className="pl-wide row">
+            <button className="btn sm">Save details</button>
+            {sheetKeys.length > 0 && <span className="muted small">{sheetKeys.length} {sheetKeys.length === 1 ? 'box was' : 'boxes were'} filled from the sheet. Check and save.</span>}
+          </div>
         </form>
 
         {(() => {
@@ -447,6 +475,7 @@ export const plCss = `
 }
 
 .pl-inline-wrap { display: block; }
+.pl-fromsheet { font-style: normal; font-size: 11px; font-weight: 600; color: #a16207; background: #fef9c3; border-radius: 99px; padding: 1px 8px; margin-left: 8px; }
 .pl-sheet { margin: 0; border: 1px solid #e2e8f0; border-radius: 14px; padding: 6px 14px; }
 .pl-sheetrow { display: grid; grid-template-columns: 190px 1fr; gap: 12px; padding: 7px 0; border-bottom: 1px solid #f1f5f9; font-size: 13.5px; }
 .pl-sheetrow:last-child { border-bottom: 0; }
