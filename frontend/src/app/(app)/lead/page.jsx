@@ -195,6 +195,9 @@ function Timeline({ people, activity, onOpen }) {
       });
       // meetings, planned follow-ups and decisions from Needs you
       const nameById = new Map(all.filter(Boolean).map(({ contact: x }) => [String(x._id), x.name || x.email]));
+      for (const m of activity?.manual || []) {
+        ev.push({ at: m.sentAt, pid: m.contact, sub: 'emails', kind: 'sent', title: `Emailed by hand to ${nameById.get(String(m.contact)) || m.to}`, text: m.subject || m.snippet || '' });
+      }
       for (const m of activity?.meetings || []) {
         ev.push({ at: m.at, pid: m.contact || null, sub: 'overview', kind: 'meet', title: `Meeting${m.status === 'cancelled' ? ' (cancelled)' : m.status === 'done' ? ` · ${CHOICE_LABEL[m.outcome] || 'done'}` : ''}`, text: [m.notes, m.sources?.length ? `from ${m.sources.join(' + ')}` : ''].filter(Boolean).join(' · ') });
       }

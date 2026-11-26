@@ -114,7 +114,15 @@ export default function PersonDetails({ id, inline = false, onClose, onChanged, 
   const sentBlock = (
     <>
       <h3>Sent emails</h3>
-      {open.emails.length === 0 && <p className="muted small">No emails sent yet.</p>}
+      {open.emails.length === 0 && !open.manual?.length && <p className="muted small">No emails sent yet.</p>}
+      {(open.manual || []).map((m) => (
+        <div key={m._id} className="ct-item manual">
+          <b>Sent by hand</b> · from the mailbox
+          <small>{m.subject}</small>
+          <small>{date(m.sentAt)}</small>
+          {m.snippet && <p>{m.snippet}</p>}
+        </div>
+      ))}
       {open.emails.map((m) => (
         <div key={m._id} className="ct-item">
           <b>{stepName(m.step, m.kind)}</b>{m.campaign?.name ? ` · ${campaignName(m.campaign.name)}` : ''}
@@ -383,6 +391,7 @@ export const ctCss = `
 .ct-item { background: rgba(255,255,255,.6); border: 1px solid rgba(148,163,184,.25); border-radius: 14px; padding: 10px 12px; font-size: 13.5px; }
 .ct-item small { display: block; color: #64748b; font-size: 12px; }
 .ct-item.reply { border-left: 3px solid #16a34a; }
+.ct-item.manual { border-left: 3px solid #a855f7; }
 .ct-item.plan { border-left: 3px solid var(--c-200); }
 .ct-item.plan.sent { border-left-color: var(--c); opacity: .7; }
 .ct-item p { white-space: pre-wrap; margin-top: 4px; }

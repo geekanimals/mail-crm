@@ -28,12 +28,13 @@ const fromDateTime = (v) => (v ? `${v}:00${TZ}` : undefined);
 const firstName = (n) => String(n || '').trim().split(/\s+/)[0] || 'there';
 const fill = (body, a) => String(body || '').replace(/\{\{\s*firstName\s*\}\}/g, firstName(a.contact?.name)).replace(/\{\{\s*company\s*\}\}/g, a.company?.name || 'your brand');
 
-const KIND = { reply: 'Reply', meeting: 'Meeting found', meeting_outcome: 'How was the meeting?' };
-const SUGGEST = { later: 'Future follow-up', not_interested: 'Not interested', ooo: 'Out of office', hot: 'Hot lead', meeting: 'Set the meeting', outcome: '' };
+const KIND = { reply: 'Reply', meeting: 'Meeting found', meeting_outcome: 'How was the meeting?', manual: 'Emailed by hand' };
+const SUGGEST = { later: 'Future follow-up', not_interested: 'Not interested', ooo: 'Out of office', hot: 'Hot lead', meeting: 'Set the meeting', outcome: '', manual: 'Move the next system email to' };
 const REASONS = [['budget', 'No budget'], ['agency', 'Has an agency / in-house team'], ['not_relevant', 'Not relevant'], ['other', 'Other']];
 const CHOICES = {
   reply: [['later', 'Future follow-up'], ['not_interested', 'Not interested'], ['ooo', 'Out of office'], ['hot', 'Hot lead (interested)'], ['nothing', 'Do nothing']],
   meeting: [['set', 'Set the meeting'], ['nothing', 'Not a meeting']],
+  manual: [['continue', 'Continue after that'], ['as_planned', 'Send as planned'], ['stop', 'Stop system emails']],
   meeting_outcome: [['deal', 'Deal done'], ['details', 'Wants more details'], ['get_back', 'Will get back on a date'], ['later', 'Follow up later'], ['not_interested', 'Not interested'], ['didnt_happen', "Didn't happen"]],
 };
 
@@ -73,7 +74,7 @@ function MessagePicker({ a, templates, value, onChange, label = 'Message' }) {
 
 function ActionCard({ a, settings, onDone, admin = true }) {
   const s = a.suggestion || {};
-  const sug = a.kind === 'reply' ? (['later', 'not_interested', 'ooo', 'hot'].includes(s.type) ? s.type : 'hot') : a.kind === 'meeting' ? 'set' : '';
+  const sug = a.kind === 'reply' ? (['later', 'not_interested', 'ooo', 'hot'].includes(s.type) ? s.type : 'hot') : a.kind === 'meeting' ? 'set' : a.kind === 'manual' ? 'continue' : '';
   const [choice, setChoice] = useState(sug);
   const [f, setF] = useState(() => ({
     date: ymd(s.date || (s.type === 'later' ? plusMonths(settings.laterMonths) : null)),
@@ -111,7 +112,8 @@ function ActionCard({ a, settings, onDone, admin = true }) {
         Object.assign(body, { winback: true, winbackDate: fromDate(f.winbackDate), winbackBody: f.winMsg.body });
       }
     }
-    if (choice === 'ooo') body.date = fromDate(f.date);
+    if (choice === 'ooo' || choice === 'continue') body.date = fromDate(f.date);
+    if (choice === 'continue' && !body.date) return notify('Choose the date', 'error');
     if (choice === 'set' || choice === 'didnt_happen') body.at = fromDateTime(f.at);
     if (choice === 'set' && !body.at) return notify('Choose the meeting time', 'error');
     setBusy(true);
@@ -199,6 +201,14 @@ function ActionCard({ a, settings, onDone, admin = true }) {
           <p className="ny-hint">The follow-ups stop until then and start again from where they were.</p>
         </div>
       )}
+      {choice === 'continue' && (
+        <div className="ny-form">
+          <label className="ny-field">Next system email on <input type="date" value={f.date} min={ymd(new Date())} onChange={(e) => set({ date: e.target.value })} /></label>
+          <p className="ny-hint">The email written by hand counts. The system emails carry on from this date.</p>
+        </div>
+      )}
+      {choice === 'as_planned' && <p className="ny-hint">The system emails go on their old dates, as if nothing was sent by hand.</p>}
+      {choice === 'stop' && <p className="ny-hint">No more system emails to {a.contact?.name || 'this person'}. You carry on by hand.</p>}
       {choice === 'hot' && <p className="ny-hint">Moves to <b>Hot lead</b> and the meeting task goes to its owner, like any reply.</p>}
       {(choice === 'set' || choice === 'didnt_happen') && (
         <div className="ny-form">
@@ -247,7 +257,7 @@ function Scheduled() {
           <div className="ny-top">
             <span className="ny-kind"><LuMail /> {s.label}</span>
             <b className="ny-who">{s.contact ? <Link href={leadHref(s.contact, 'emails')}>{s.contact.name || s.contact.email}</Link> : 'Deleted contact'}{s.contact?.company ? ` · ${s.contact.company}` : ''}</b>
-            <small className={s.status === 'failed' ? 'ny-fail' : 'muted'}>{s.status === 'failed' ? `Failed: ${s.error}` : day(s.sendAt)}{s.remaining ? ` · then ${s.remaining} more if no reply` : ''}</small>
+            <small className={s.status === 'failed' ? 'ny-fail' : 'muted'}>{s.status === 'held' ? 'On hold: emailed by hand, decide in Needs you · ' : ''}{s.status === 'failed' ? `Failed: ${s.error}` : day(s.sendAt)}{s.remaining ? ` · then ${s.remaining} more if no reply` : ''}</small>
           </div>
           {edit?._id === s._id ? (
             <div className="ny-form">

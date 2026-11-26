@@ -9,7 +9,7 @@ import { Campaign, Company, Contact, EmailLog, Enrollment, Reply, STAGE_RANK, Su
 import { bounceReason, buildEmail, sendMail, isBadAddress, parseCc, unsubscribeUrl } from './mail.js';
 import { FOLLOW_UPS, SIGNATURE, SIGNATURE_KEY } from './templates.js';
 import { joinNewsletter, runNewsletters } from './newsletter.js';
-import { askMeetingOutcomes, classifyReply, onReply, runScheduled, suggestMeeting } from './actions.js';
+import { askMeetingOutcomes, checkSentFolder, classifyReply, onReply, runScheduled, suggestMeeting } from './actions.js';
 import { syncCalendars, invitesIn } from './calendar.js';
 
 const DAY = 86400000;
@@ -558,6 +558,13 @@ async function readInbox() {
       await setSetting('imap', { validity, lastUid });
     } finally {
       lock.release();
+    }
+    // emails written by hand from this mailbox: never let the CRM send a second one on top (asks in Needs you)
+    try {
+      status.sentCheck = { at: new Date(), ...(await checkSentFolder(client)) };
+    } catch (e) {
+      status.sentCheck = { at: new Date(), error: e.message };
+      console.error('[sent]', e.message);
     }
     await client.logout();
     status.lastReplyCheck = Date.now();

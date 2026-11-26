@@ -6,6 +6,7 @@ import { config } from '../config.js';
 import { fill, parseCc } from '../mail.js';
 import { FOLLOW_UPS } from '../templates.js';
 import { addWorkingDays, enroll, expectedSendAt, forgetProjection, gapFor, kickFresh, projectQueue, newText, pickEmail, totalSteps, withSignature, markReplied, markUnsubscribed, runQueue, stopAll } from '../worker.js';
+import { ManualEmail } from '../actions.js';
 import { ah, checkId, fail, str, validEmail } from '../utils.js';
 
 const router = Router();
@@ -155,9 +156,10 @@ router.get(
     const id = checkId(req.params.id);
     const contact = await Contact.findById(id).populate('companyId', 'name stage owner website industry location');
     if (!contact) throw fail(404, 'Contact not found');
-    const [emails, replies] = await Promise.all([
+    const [emails, replies, manual] = await Promise.all([
       EmailLog.find({ contact: id }).sort({ sentAt: -1 }).limit(50).populate('campaign', 'name').lean(),
       Reply.find({ contact: id }).sort({ receivedAt: -1 }).limit(20).lean(),
+      ManualEmail.find({ contact: id }).sort({ sentAt: -1 }).limit(20).lean(),
     ]);
     // every email this person gets: first email + follow-ups (name / company filled in)
     const enr = await Enrollment.findOne({ contact: id }).sort({ createdAt: -1 }).populate('campaign').lean();
@@ -170,7 +172,7 @@ router.get(
       planned.push({ subject: fill(m.subject?.trim() || (i === 0 ? '' : `Re: ${first.replace(/^re:\s*/i, '')}`), contact), body: fill(withSignature(m.body), contact) });
     }
     const followUp = (await followUpInfo([contact]))[String(contact._id)] || null;
-    res.json({ contact, emails, replies: replies.map((r) => ({ ...r, snippet: newText(r.snippet) || r.snippet })), planned, followUp });
+    res.json({ contact, emails, manual, replies: replies.map((r) => ({ ...r, snippet: newText(r.snippet) || r.snippet })), planned, followUp });
   })
 );
 

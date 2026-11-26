@@ -1,7 +1,7 @@
 // Needs you: decisions waiting for a person. Admin: everything. Employees: the meeting questions given to them.
 import { Router } from 'express';
 import { Company, Contact, Reply, getSetting, setSetting } from '../models.js';
-import { Action, Meeting, ScheduledEmail, KIND_LABEL, actionSettings, decide, mayAnswer, suggestMeeting, undoDecision } from '../actions.js';
+import { Action, ManualEmail, Meeting, ScheduledEmail, KIND_LABEL, actionSettings, decide, mayAnswer, suggestMeeting, undoDecision } from '../actions.js';
 import { calendarUrls, syncCalendars } from '../calendar.js';
 import { ah, checkId, fail, str } from '../utils.js';
 
@@ -105,12 +105,13 @@ router.get(
   ah(async (req, res) => {
     admin(req);
     const id = checkId(req.params.id);
-    const [meetings, scheduled, actions] = await Promise.all([
+    const [meetings, scheduled, actions, manual] = await Promise.all([
       Meeting.find({ company: id }).sort({ at: -1 }).lean(),
       ScheduledEmail.find({ company: id }).sort({ sendAt: -1 }).lean(),
       Action.find({ company: id }).sort({ createdAt: -1 }).limit(100).lean(),
+      ManualEmail.find({ company: id }).sort({ sentAt: -1 }).limit(100).lean(),
     ]);
-    res.json({ meetings, scheduled: scheduled.map((s) => ({ ...s, label: KIND_LABEL[s.kind] })), actions: await shape(actions) });
+    res.json({ meetings, manual, scheduled: scheduled.map((s) => ({ ...s, label: KIND_LABEL[s.kind] })), actions: await shape(actions) });
   })
 );
 
@@ -119,7 +120,7 @@ router.get(
   '/scheduled',
   ah(async (req, res) => {
     admin(req);
-    const list = await ScheduledEmail.find({ status: { $in: ['scheduled', 'failed'] } }).sort({ sendAt: 1 }).limit(500).lean();
+    const list = await ScheduledEmail.find({ status: { $in: ['scheduled', 'held', 'failed'] } }).sort({ sendAt: 1 }).limit(500).lean();
     const contacts = new Map((await Contact.find({ _id: { $in: list.map((s) => s.contact) } }).select('name email companyId company').lean()).map((c) => [String(c._id), c]));
     const week = Date.now() + 7 * 86400000;
     res.json({ items: list.map((s) => ({ ...s, label: KIND_LABEL[s.kind], contact: contacts.get(String(s.contact)) || null })), thisWeek: list.filter((s) => s.status === 'scheduled' && new Date(s.sendAt) <= week).length });
@@ -130,7 +131,7 @@ router.put(
   ah(async (req, res) => {
     admin(req);
     const s = await ScheduledEmail.findById(checkId(req.params.id));
-    if (!s || !['scheduled', 'failed'].includes(s.status)) throw fail(404, 'Not found');
+    if (!s || !['scheduled', 'held', 'failed'].includes(s.status)) throw fail(404, 'Not found');
     if (req.body?.sendAt) {
       const d = new Date(req.body.sendAt);
       if (Number.isNaN(d.getTime())) throw fail(400, 'Choose a date');
@@ -149,7 +150,7 @@ router.delete(
   '/scheduled/:id',
   ah(async (req, res) => {
     admin(req);
-    await ScheduledEmail.updateOne({ _id: checkId(req.params.id), status: { $in: ['scheduled', 'failed'] } }, { $set: { status: 'cancelled', error: `Cancelled by ${who(req)}` } });
+    await ScheduledEmail.updateOne({ _id: checkId(req.params.id), status: { $in: ['scheduled', 'held', 'failed'] } }, { $set: { status: 'cancelled', error: `Cancelled by ${who(req)}` } });
     res.json({ ok: true });
   })
 );

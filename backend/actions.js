@@ -8,7 +8,7 @@
 import crypto from 'node:crypto';
 import mongoose from 'mongoose';
 import { config } from './config.js';
-import { Company, Contact, EmailLog, Enrollment, Reply, Suppression, User, getSetting, notify, stageChanged } from './models.js';
+import { Company, Contact, EmailLog, Enrollment, Reply, Suppression, User, getSetting, notify, setSetting, stageChanged } from './models.js';
 import { HrTask } from './hr-models.js';
 import { buildEmail, sendMail, unsubscribeUrl } from './mail.js';
 
@@ -21,7 +21,7 @@ export const Action = model(
   'Action',
   new Schema(
     {
-      kind: { type: String, enum: ['reply', 'meeting', 'meeting_outcome'], required: true },
+      kind: { type: String, enum: ['reply', 'meeting', 'meeting_outcome', 'manual'], required: true },
       status: { type: String, enum: ['open', 'done', 'dismissed'], default: 'open', index: true },
       contact: { type: id, ref: 'Contact', index: true },
       company: { type: id, ref: 'Company', index: true },
@@ -76,7 +76,7 @@ export const ScheduledEmail = model(
       sendAt: { type: Date, index: true },
       body: String,
       remaining: { type: Number, default: 0 }, // more follow-ups after this one if there is no reply
-      status: { type: String, enum: ['scheduled', 'sending', 'sent', 'cancelled', 'failed'], default: 'scheduled', index: true },
+      status: { type: String, enum: ['scheduled', 'held', 'sending', 'sent', 'cancelled', 'failed'], default: 'scheduled', index: true }, // held = waiting for a decision (emailed by hand)
       error: String,
       action: { type: id, ref: 'Action' },
       sentAt: Date,
@@ -297,7 +297,7 @@ export async function settleCompany(companyId) {
 }
 
 export async function cancelScheduled(contactId, why) {
-  return ScheduledEmail.updateMany({ contact: contactId, status: 'scheduled' }, { $set: { status: 'cancelled', error: why } });
+  return ScheduledEmail.updateMany({ contact: contactId, status: { $in: ['scheduled', 'held'] } }, { $set: { status: 'cancelled', error: why } });
 }
 
 async function schedule({ contact, kind, sendAt, body, remaining = 0, action, by }) {
@@ -311,7 +311,7 @@ async function schedule({ contact, kind, sendAt, body, remaining = 0, action, by
 // everything else becomes a suggestion that waits for a person.
 export async function onReply(contact, verdict, { reply, quote, at }) {
   await cancelScheduled(contact._id, 'They replied');
-  await Action.updateMany({ contact: contact._id, kind: 'reply', status: 'open' }, { $set: { status: 'dismissed', decidedBy: 'CRM', decidedAt: new Date(), decision: { note: 'A newer reply came in' } } });
+  await Action.updateMany({ contact: contact._id, kind: { $in: ['reply', 'manual'] }, status: 'open' }, { $set: { status: 'dismissed', decidedBy: 'CRM', decidedAt: new Date(), decision: { note: 'A newer reply came in' } } });
   const fresh = await Contact.findById(contact._id).lean();
   if (verdict.type === 'hot') {
     // they wrote again after being parked: back in the main flow
@@ -474,6 +474,26 @@ export async function decide(action, body = {}, by = 'admin') {
     } else if (choice !== 'nothing') throw Object.assign(new Error('Choose what to do'), { status: 400 });
   }
 
+  if (action.kind === 'manual') {
+    const held = action.decision?.held || {};
+    undo.held = held;
+    if (choice === 'continue' || choice === 'as_planned') {
+      const date = choice === 'continue' ? (body.date ? new Date(body.date) : action.suggestion?.date) : null;
+      if (choice === 'continue' && (!date || Number.isNaN(date.getTime()))) throw Object.assign(new Error('Choose the date'), { status: 400 });
+      for (const eid of held.enrollments || []) await Enrollment.updateOne({ _id: eid, status: 'active' }, { $set: { paused: false, ...(date ? { nextSendAt: date } : {}) } });
+      for (const sid of held.scheduled || []) {
+        const x = await ScheduledEmail.findById(sid);
+        if (x?.status !== 'held') continue;
+        x.status = 'scheduled';
+        if (date && date > x.sendAt) x.sendAt = date;
+        await x.save();
+      }
+    } else if (choice === 'stop') {
+      await Enrollment.updateMany({ _id: { $in: held.enrollments || [] }, status: 'active' }, { $set: { status: 'stopped', paused: false } });
+      await ScheduledEmail.updateMany({ _id: { $in: held.scheduled || [] }, status: 'held' }, { $set: { status: 'cancelled', error: 'Stopped after an email by hand' } });
+    } else throw Object.assign(new Error('Choose what to do'), { status: 400 });
+  }
+
   if (action.kind === 'meeting') {
     if (choice === 'set') {
       const at = body.at ? new Date(body.at) : action.suggestion?.date;
@@ -547,6 +567,11 @@ export async function undoDecision(action, by = 'admin') {
   if (u.meetings?.length) await Meeting.deleteMany({ _id: { $in: u.meetings } });
   if (u.meeting?.id) await Meeting.updateOne({ _id: u.meeting.id }, { $set: { status: u.meeting.status, outcome: u.meeting.outcome, notes: u.meeting.notes, at: u.meeting.at } });
   for (const e of u.enrollments || []) await Enrollment.updateOne({ _id: e.id }, { $set: { status: e.status, nextSendAt: e.nextSendAt } });
+  if (u.held) {
+    // emailed by hand: hold the system emails again (dates stay as they are now)
+    await Enrollment.updateMany({ _id: { $in: u.held.enrollments || [] }, status: { $in: ['active', 'stopped'] } }, { $set: { status: 'active', paused: true } });
+    await ScheduledEmail.updateMany({ _id: { $in: u.held.scheduled || [] }, status: { $in: ['scheduled', 'cancelled'] } }, { $set: { status: 'held' } });
+  }
   if (u.contact && action.contact) await Contact.updateOne({ _id: action.contact }, { $set: u.contact });
   if (u.stage && action.company) {
     const c = await Company.findById(action.company);
@@ -669,6 +694,116 @@ export async function askMeetingOutcomes() {
   }
 }
 
+
+/* ---------------- emails sent by hand from the mailbox (Sent folder) ---------------- */
+// Someone (e.g. Aanchal) wrote to a lead from Gmail. If the CRM was about to email them too, it holds that email
+// and asks in Needs you: continue after the hand-written one / send as planned / stop.
+export const ManualEmail = model(
+  'ManualEmail',
+  new Schema(
+    {
+      contact: { type: id, ref: 'Contact', index: true },
+      company: { type: id, ref: 'Company' },
+      messageId: String,
+      subject: String,
+      snippet: String,
+      to: String,
+      sentAt: { type: Date, index: true },
+    },
+    { timestamps: true }
+  ).index({ messageId: 1, contact: 1 }, { unique: true })
+);
+
+const OWN_ID = /^<(geekcrm|geeknews)\./i;
+/** read the Sent folder since last time (client = a connected ImapFlow client) */
+export async function checkSentFolder(client) {
+  const boxes = await client.list();
+  const sent = boxes.find((b) => b.specialUse === '\\Sent') || boxes.find((b) => /(^|\/)sent( mail| items)?$/i.test(b.path));
+  if (!sent) return { skipped: 'No Sent folder' };
+  const { simpleParser } = await import('mailparser');
+  const W = await w();
+  const lock = await client.getMailboxLock(sent.path);
+  let found = 0;
+  try {
+    const state = (await getSetting('imapSent', null)) || {};
+    const validity = String(client.mailbox.uidValidity);
+    const known = state.validity === validity && state.lastUid;
+    if (!known) {
+      // first time: start from now (older hand-written emails are not looked at, so nothing running is held by surprise)
+      await setSetting('imapSent', { validity, lastUid: Math.max(0, (client.mailbox.uidNext || 1) - 1) });
+      return { started: true };
+    }
+    const uids = ((await client.search({ uid: `${state.lastUid + 1}:*` }, { uid: true })) || []).filter((u) => u > state.lastUid);
+    let lastUid = known ? state.lastUid : 0;
+    const msgs = [];
+    if (uids.length) for await (const m of client.fetch(uids, { uid: true, envelope: true }, { uid: true })) msgs.push(m);
+    for (const m of msgs.sort((a, b) => a.uid - b.uid)) {
+      lastUid = Math.max(lastUid, m.uid);
+      const env = m.envelope || {};
+      const messageId = env.messageId || '';
+      if (OWN_ID.test(messageId) || (messageId && (await EmailLog.exists({ messageId })))) continue; // the CRM's own email
+      const rcpt = [...(env.to || []), ...(env.cc || [])].map((a) => String(a.address || '').toLowerCase()).filter(Boolean);
+      if (!rcpt.length) continue;
+      const people = await Contact.find({ email: { $in: rcpt } }).lean();
+      if (!people.length) continue;
+      const at = env.date ? new Date(env.date) : new Date();
+      // a copy of a CRM email with a changed Message-ID: same person, same subject, within 10 minutes
+      let snippet = '';
+      try {
+        const src = (await client.fetchOne(String(m.uid), { source: true }, { uid: true }))?.source;
+        snippet = W.newText((await simpleParser(src)).text || '').slice(0, 600);
+      } catch {
+        /* no text: the subject is enough */
+      }
+      for (const p of people) {
+        const twin = await EmailLog.exists({ contact: p._id, subject: env.subject || '', sentAt: { $gte: new Date(at - 10 * 60000), $lte: new Date(+at + 10 * 60000) } });
+        if (twin) continue;
+        try {
+          const me = await ManualEmail.create({ contact: p._id, company: p.companyId, messageId: messageId || `uid-${m.uid}`, subject: env.subject || '', snippet, to: p.email, sentAt: at });
+          await onManualEmail(p, me);
+          found++;
+        } catch (e) {
+          if (e?.code !== 11000) console.error('[sent]', e.message);
+        }
+      }
+    }
+    await setSetting('imapSent', { validity, lastUid });
+  } finally {
+    lock.release();
+  }
+  return { found };
+}
+
+/** a hand-written email to a lead: hold the CRM's next email to them and ask what to do */
+export async function onManualEmail(contact, me) {
+  const lastCrm = await EmailLog.findOne({ contact: contact._id, status: 'sent', kind: { $ne: 'manual' } }).sort({ sentAt: -1 }).select('sentAt').lean();
+  if (lastCrm && new Date(lastCrm.sentAt) > new Date(me.sentAt)) return null; // the CRM wrote after it: nothing to hold
+  const enr = await Enrollment.find({ contact: contact._id, status: 'active', paused: { $ne: true } }).lean();
+  const sch = await ScheduledEmail.find({ contact: contact._id, status: 'scheduled' }).lean();
+  if (!enr.length && !sch.length) return null; // no system email coming: it is only shown on the timeline
+  const W = await w();
+  const next = [...enr.map((e) => e.nextSendAt), ...sch.map((s) => s.sendAt)].filter(Boolean).map((d) => new Date(d)).sort((a, b) => a - b)[0];
+  const after = W.addWorkingDays(new Date(me.sentAt), config.intervalDays || 3);
+  const date = next && next > after ? next : after;
+  // hold now, so nothing goes twice while waiting for a decision
+  await Enrollment.updateMany({ _id: { $in: enr.map((e) => e._id) } }, { $set: { paused: true } });
+  await ScheduledEmail.updateMany({ _id: { $in: sch.map((s) => s._id) } }, { $set: { status: 'held' } });
+  const open = await Action.findOne({ kind: 'manual', contact: contact._id, status: 'open' });
+  const held = { enrollments: [...new Set([...(open?.decision?.held?.enrollments || []), ...enr.map((e) => String(e._id))])], scheduled: [...new Set([...(open?.decision?.held?.scheduled || []), ...sch.map((s) => String(s._id))])], next: next || null };
+  const quote = [me.subject ? `Subject: ${me.subject}` : '', me.snippet].filter(Boolean).join('\n\n');
+  if (open) {
+    open.quote = quote;
+    open.suggestion = { type: 'manual', date, note: `Emailed by hand on ${fmt(me.sentAt)}` };
+    open.decision = { ...(open.decision || {}), held };
+    open.markModified('decision');
+    await open.save();
+    return open;
+  }
+  const a = await Action.create({ kind: 'manual', contact: contact._id, company: contact.companyId, quote, suggestion: { type: 'manual', date, note: `Emailed by hand on ${fmt(me.sentAt)}${next ? ` · the next system email was due ${fmt(next)}` : ''}` }, decision: { held } });
+  await notify('action', contact, { text: `Emailed by hand: the next system email is on hold until you decide` });
+  return a;
+}
+
 /* ---------------- what one person may see ---------------- */
-export const mayAnswer = (req, a) => req.role === 'admin' || (req.role === 'team' && a.kind !== 'reply' && (a.assignees || []).some((u) => String(u) === String(req.account?._id)));
+export const mayAnswer = (req, a) => req.role === 'admin' || (req.role === 'team' && !['reply', 'manual'].includes(a.kind) && (a.assignees || []).some((u) => String(u) === String(req.account?._id)));
 export { User };
