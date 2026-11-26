@@ -50,6 +50,21 @@ async function listFilter(q0 = {}) {
   if (mongoose.isValidObjectId(q0.companyId)) filter.companyId = q0.companyId;
   if (STATUSES.includes(q0.status)) filter.status = q0.status;
   if (str(q0.batch)) filter.batch = str(q0.batch);
+  // column filters (Contacts table headings)
+  const and = [];
+  if (q0.phone === 'has') and.push({ phone: /\d{5,}/ });
+  if (q0.phone === 'none') and.push({ $or: [{ phone: { $exists: false } }, { phone: { $not: /\d{5,}/ } }] });
+  if (q0.linkedin === 'has') and.push({ linkedin: /linkedin\.com/i });
+  if (q0.linkedin === 'none') and.push({ $or: [{ linkedin: { $exists: false } }, { linkedin: { $not: /linkedin\.com/i } }] });
+  if (q0.emailed === 'never') and.push({ $or: [{ lastContactedAt: { $exists: false } }, { lastContactedAt: null }] });
+  if (q0.emailed === '7d') and.push({ lastContactedAt: { $gte: new Date(Date.now() - 7 * 86400000) } });
+  if (q0.emailed === '30d') and.push({ lastContactedAt: { $lt: new Date(Date.now() - 30 * 86400000) } });
+  if (q0.stage === 'none') and.push({ $or: [{ companyId: { $exists: false } }, { companyId: null }] });
+  else if (STAGES.includes(q0.stage)) and.push({ companyId: { $in: await Company.distinct('_id', { stage: q0.stage }) } });
+  const col = str(q0.col, 100);
+  const colv = str(q0.colv, 100).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  if (col && colv) and.push({ fields: { $elemMatch: { k: col, v: new RegExp(colv, 'i') } } });
+  if (and.length) filter.$and = and;
   if (SEQ.includes(q0.seq)) {
     // running = follow-ups going on, paused = paused by hand, none = not in any running sequence
     const ids = await Enrollment.distinct('contact', { status: 'active', ...(q0.seq === 'paused' ? { paused: true } : q0.seq === 'running' ? { paused: { $ne: true } } : {}) });
@@ -94,6 +109,34 @@ async function followUpInfo(contacts) {
   return out;
 }
 
+/** one page of the list, sorted by a column ("name", "-name", "company", "status", "emailed", "phone", "linkedin",
+ *  or "col:<sheet column>"). Empty values always go last. Default: newest first. */
+const SORTS = { name: '$name', company: '$company', status: '$status', emailed: '$lastContactedAt', phone: '$phone', linkedin: '$linkedin' };
+async function listPage(filter, sort, page, limit) {
+  const select = '-messages -customBody -unsubscribeToken -__v';
+  const desc = sort.startsWith('-');
+  const key = sort.replace(/^-/, '');
+  const col = key.startsWith('col:') ? key.slice(4).slice(0, 100) : null;
+  if (!SORTS[key] && !col) {
+    return Contact.find(filter).sort({ createdAt: -1, _id: -1 }).skip((page - 1) * limit).limit(limit).select(select).populate('companyId', 'name stage owner').lean();
+  }
+  const value = col
+    ? { $let: { vars: { f: { $first: { $filter: { input: { $ifNull: ['$fields', []] }, cond: { $eq: ['$$this.k', col] } } } } }, in: '$$f.v' } }
+    : SORTS[key];
+  const ids = await Contact.aggregate([
+    { $match: filter },
+    { $addFields: { _sv: value } },
+    { $addFields: { _empty: { $cond: [{ $or: [{ $eq: [{ $ifNull: ['$_sv', ''] }, ''] }, { $regexMatch: { input: { $toString: { $ifNull: ['$_sv', ''] } }, regex: /^\s*(none|n\/?a|-)\s*$/i } }] }, 1, 0] }, _svl: { $cond: [{ $eq: [{ $type: '$_sv' }, 'string'] }, { $toLower: '$_sv' }, '$_sv'] } } },
+    { $sort: { _empty: 1, _svl: desc ? -1 : 1, _id: 1 } },
+    { $skip: (page - 1) * limit },
+    { $limit: limit },
+    { $project: { _id: 1 } },
+  ]);
+  const order = ids.map((x) => String(x._id));
+  const docs = await Contact.find({ _id: { $in: ids.map((x) => x._id) } }).select(select).populate('companyId', 'name stage owner').lean();
+  return docs.sort((a, b) => order.indexOf(String(a._id)) - order.indexOf(String(b._id)));
+}
+
 // list + search + filter
 router.get(
   '/',
@@ -102,7 +145,7 @@ router.get(
     const limit = 25;
     const filter = await listFilter(req.query);
     const [items, total, counts, batches, running, paused] = await Promise.all([
-      Contact.find(filter).sort({ createdAt: -1, _id: -1 }).skip((page - 1) * limit).limit(limit).select('-messages -customBody -unsubscribeToken -__v').populate('companyId', 'name stage owner').lean(),
+      listPage(filter, String(req.query.sort || ''), page, limit),
       Contact.countDocuments(filter),
       Contact.aggregate([{ $group: { _id: '$status', n: { $sum: 1 } } }]),
       Contact.distinct('batch'),

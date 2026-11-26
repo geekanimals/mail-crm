@@ -8,7 +8,7 @@
 import crypto from 'node:crypto';
 import mongoose from 'mongoose';
 import { config } from './config.js';
-import { Company, Contact, EmailLog, Enrollment, Reply, Suppression, User, getSetting, notify, setSetting, stageChanged } from './models.js';
+import { Company, Contact, EmailLog, Enrollment, Reply, STAGE_RANK, Suppression, User, getSetting, notify, setSetting, stageChanged } from './models.js';
 import { HrTask } from './hr-models.js';
 import { buildEmail, sendMail, unsubscribeUrl } from './mail.js';
 
@@ -21,7 +21,7 @@ export const Action = model(
   'Action',
   new Schema(
     {
-      kind: { type: String, enum: ['reply', 'meeting', 'meeting_outcome', 'manual', 'referral'], required: true },
+      kind: { type: String, enum: ['reply', 'meeting', 'meeting_outcome', 'manual', 'referral', 'estimate'], required: true },
       status: { type: String, enum: ['open', 'done', 'dismissed'], default: 'open', index: true },
       contact: { type: id, ref: 'Contact', index: true },
       company: { type: id, ref: 'Company', index: true },
@@ -318,13 +318,23 @@ export async function onReply(contact, verdict, { reply, quote, at }) {
   await Action.updateMany({ contact: contact._id, kind: { $in: ['reply', 'manual'] }, status: 'open' }, { $set: { status: 'dismissed', decidedBy: 'CRM', decidedAt: new Date(), decision: { note: 'A newer reply came in' } } });
   const fresh = await Contact.findById(contact._id).lean();
   if (verdict.type === 'hot') {
-    // they wrote again after being parked: back in the main flow
-    if (fresh?.outcome) {
-      await Contact.updateOne({ _id: contact._id }, { $set: { outcome: null } });
-      await settleCompany(fresh.companyId);
-    }
     if (verdict.meeting) await suggestMeeting({ contact: fresh, at: verdict.meeting.at, timeKnown: verdict.meeting.timeKnown, source: 'email', quote, reply });
-    return null;
+    // ask only when it would move the company (Hot lead / Opportunity, or back from Future follow-up / Not interested)
+    const c = fresh?.companyId ? await Company.findById(fresh.companyId).select('stage').lean() : null;
+    const target = fresh?.companyId ? await (await w()).stageFromReplies(fresh.companyId) : 'hot';
+    const parked = Boolean(fresh?.outcome) || ['later', 'not_interested', 'cold'].includes(c?.stage);
+    const moves = !c || parked || (STAGE_RANK[target] ?? 1) > (STAGE_RANK[c.stage] ?? 0);
+    if (!moves) return null;
+    const a = await Action.create({
+      kind: 'reply',
+      contact: contact._id,
+      company: fresh?.companyId,
+      reply: reply?._id,
+      quote: String(quote || '').slice(0, 2000),
+      suggestion: { type: 'hot', check: Boolean(verdict.check), note: target === 'opportunity' && !parked ? 'Replied again: suggested Opportunity' : 'Suggested: Hot lead (the meeting task goes to its owner)' },
+    });
+    await notify('action', fresh, { text: `Replied: ${String(quote || '').slice(0, 140)}` });
+    return a;
   }
   const a = await Action.create({
     kind: 'reply',
@@ -347,24 +357,29 @@ export async function suggestMeeting({ contact, company, at, timeKnown = true, s
   // a meeting that is already set
   const set = await Meeting.findOne({ company: companyId, status: 'set', ...(calendarUid ? { $or: [{ calendarUid }, { at: { $gte: new Date(at - 2 * DAY), $lte: new Date(+at + 2 * DAY) } }] } : { at: { $gte: new Date(at - 2 * DAY), $lte: new Date(+at + 2 * DAY) } }) });
   if (set) {
-    if (cancelled && (set.calendarUid === calendarUid || !set.calendarUid)) {
-      set.status = 'cancelled';
-      await set.save();
-      await notify('action', contact, { text: `Meeting on ${fmt(set.at)} was cancelled in the calendar` });
+    // a change to a meeting that is already set is never applied by itself: ask in Needs you
+    const change = cancelled && (set.calendarUid === calendarUid || !set.calendarUid) ? 'meeting_cancel' : !cancelled && !near(set.at, at) && source === 'calendar' ? 'meeting_move' : null;
+    if (!change) {
+      if (!cancelled) {
+        set.sources = [...new Set([...(set.sources || []), source])];
+        if (calendarUid) set.calendarUid = calendarUid;
+        await set.save();
+      }
       return set;
     }
-    if (cancelled) return set;
-    const sources = [...new Set([...(set.sources || []), source])];
-    if (!near(set.at, at) && source === 'calendar') {
-      const old = set.at;
-      set.at = at;
-      set.outcomeAsked = false;
-      await notify('action', contact, { text: `Meeting moved: ${fmt(old)} → ${fmt(at)} (from the calendar)` });
-    }
-    set.sources = sources;
-    if (calendarUid) set.calendarUid = calendarUid;
-    await set.save();
-    return set;
+    await Action.updateMany({ kind: 'meeting', meeting: set._id, status: 'open' }, { $set: { status: 'dismissed', decidedBy: 'CRM', decidedAt: new Date(), decision: { note: 'A newer calendar change' } } });
+    const a = await Action.create({
+      kind: 'meeting',
+      meeting: set._id,
+      contact: contact?._id || set.contact,
+      company: companyId,
+      quote: String(title || quote || '').slice(0, 500),
+      suggestion: { type: change, date: change === 'meeting_move' ? at : set.at, sources: ['calendar'], note: change === 'meeting_move' ? `Set for ${fmt(set.at)}, the calendar now says ${fmt(at)}` : `The calendar says the meeting on ${fmt(set.at)} was cancelled` },
+      assignees: (await meetingOwner()) ? [await meetingOwner()] : [],
+      decision: { meetingId: String(set._id), calendarUid },
+    });
+    await notify('action', contact, { text: change === 'meeting_move' ? `Meeting moved in the calendar: ${fmt(set.at)} → ${fmt(at)}. Update it?` : `Meeting on ${fmt(set.at)} cancelled in the calendar. Mark it cancelled?` });
+    return a;
   }
   if (cancelled) {
     await Action.updateMany({ kind: 'meeting', company: companyId, status: 'open', 'suggestion.date': { $gte: new Date(at - DAY), $lte: new Date(+at + DAY) } }, { $set: { status: 'dismissed', decidedBy: 'CRM', decidedAt: new Date(), decision: { note: 'Cancelled in the calendar' } } });
@@ -513,6 +528,19 @@ export async function decide(action, body = {}, by = 'admin') {
     } else if (choice !== 'nothing') throw Object.assign(new Error('Choose what to do'), { status: 400 });
   }
 
+  if (action.kind === 'estimate') {
+    if (choice === 'opportunity') {
+      const c = await Company.findById(action.company);
+      if (c && !['opportunity', 'account', 'old_client'].includes(c.stage)) {
+        const from = c.stage;
+        c.stage = 'opportunity';
+        await c.save();
+        await stageChanged(c, from, 'opportunity');
+        result.company = { from, to: 'opportunity' };
+      }
+    } else if (choice !== 'nothing') throw Object.assign(new Error('Choose what to do'), { status: 400 });
+  }
+
   if (action.kind === 'referral') {
     if (!contact?.email) throw Object.assign(new Error('This person has no email'), { status: 400 });
     if (choice === 'email' || choice === 'email_later') {
@@ -547,7 +575,23 @@ export async function decide(action, body = {}, by = 'admin') {
     } else throw Object.assign(new Error('Choose what to do'), { status: 400 });
   }
 
-  if (action.kind === 'meeting') {
+  if (action.kind === 'meeting' && action.decision?.meetingId) {
+    // a calendar change to a meeting that was already set
+    const m = await Meeting.findById(action.decision.meetingId);
+    if (!m) throw Object.assign(new Error('The meeting was deleted'), { status: 404 });
+    undo.meeting = { id: String(m._id), status: m.status, outcome: m.outcome || null, notes: m.notes || null, at: m.at };
+    if (choice === 'set') {
+      const at = body.at ? new Date(body.at) : action.suggestion?.date;
+      if (!at || Number.isNaN(at.getTime())) throw Object.assign(new Error('Choose the meeting time'), { status: 400 });
+      m.at = at;
+      m.outcomeAsked = false;
+      await m.save();
+      await meetingTask(m.company, at);
+    } else if (choice === 'cancel') {
+      m.status = 'cancelled';
+      await m.save();
+    } else if (choice !== 'nothing') throw Object.assign(new Error('Choose what to do'), { status: 400 });
+  } else if (action.kind === 'meeting') {
     if (choice === 'set') {
       const at = body.at ? new Date(body.at) : action.suggestion?.date;
       if (!at || Number.isNaN(at.getTime())) throw Object.assign(new Error('Choose the meeting time'), { status: 400 });
@@ -804,9 +848,12 @@ export async function checkSentFolder(client) {
       const at = env.date ? new Date(env.date) : new Date();
       // a copy of a CRM email with a changed Message-ID: same person, same subject, within 10 minutes
       let snippet = '';
+      let files = [];
       try {
         const src = (await client.fetchOne(String(m.uid), { source: true }, { uid: true }))?.source;
-        snippet = W.newText((await simpleParser(src)).text || '').slice(0, 600);
+        const parsed = await simpleParser(src);
+        snippet = W.newText(parsed.text || '').slice(0, 600);
+        files = (parsed.attachments || []).map((x) => x.filename || '').filter(Boolean);
       } catch {
         /* no text: the subject is enough */
       }
@@ -816,6 +863,7 @@ export async function checkSentFolder(client) {
         try {
           const me = await ManualEmail.create({ contact: p._id, company: p.companyId, messageId: messageId || `uid-${m.uid}`, subject: env.subject || '', snippet, to: p.email, sentAt: at });
           await onManualEmail(p, me);
+          await readManualEmail(p, me, files);
           found++;
         } catch (e) {
           if (e?.code !== 11000) console.error('[sent]', e.message);
@@ -827,6 +875,31 @@ export async function checkSentFolder(client) {
     lock.release();
   }
   return { found };
+}
+
+/** what a hand-written email says: a meeting (time / link) or an estimate / proposal -> a question in Needs you */
+const ESTIMATE_RX = /\b(estimates?|quotations?|quotes?|proposals?|pricing|rate ?cards?|commercials|costing|invoice)\b/i;
+const MEET_LINK = /(meet\.google\.com|zoom\.us\/j|teams\.microsoft\.com|teams\.live\.com)/i;
+export async function readManualEmail(contact, me, files = []) {
+  const text = `${me.subject || ''}\n${me.snippet || ''}`;
+  const t = findMeetingTime(text, new Date(me.sentAt));
+  if (t && (MEET_LINK.test(text) || /\b(meeting|call|meet|zoom|discuss|connect|catch up)\b/i.test(text))) {
+    await suggestMeeting({ contact, at: t.at, timeKnown: t.timeKnown, source: 'email', quote: `Sent by hand: ${text}`.slice(0, 1500) });
+  }
+  const estimateFile = files.find((f) => ESTIMATE_RX.test(f));
+  if ((ESTIMATE_RX.test(me.subject || '') || estimateFile) && contact.companyId) {
+    const c = await Company.findById(contact.companyId).select('stage name').lean();
+    if (c && !['opportunity', 'account', 'old_client'].includes(c.stage) && !(await Action.exists({ kind: 'estimate', company: c._id, status: 'open' }))) {
+      await Action.create({
+        kind: 'estimate',
+        contact: contact._id,
+        company: c._id,
+        quote: `Subject: ${me.subject || ''}${files.length ? `\nAttached: ${files.join(', ')}` : ''}\n\n${me.snippet || ''}`.slice(0, 2000),
+        suggestion: { type: 'estimate', date: me.sentAt, note: `An estimate / proposal seems to have been sent by hand on ${fmt(me.sentAt)}` },
+      });
+      await notify('action', contact, { text: `Estimate / proposal sent by hand to ${c.name}. Move it to Opportunity?` });
+    }
+  }
 }
 
 /** a hand-written email to a lead: hold the CRM's next email to them and ask what to do */
@@ -860,5 +933,5 @@ export async function onManualEmail(contact, me) {
 }
 
 /* ---------------- what one person may see ---------------- */
-export const mayAnswer = (req, a) => req.role === 'admin' || (req.role === 'team' && !['reply', 'manual', 'referral'].includes(a.kind) && (a.assignees || []).some((u) => String(u) === String(req.account?._id)));
+export const mayAnswer = (req, a) => req.role === 'admin' || (req.role === 'team' && !['reply', 'manual', 'referral', 'estimate'].includes(a.kind) && (a.assignees || []).some((u) => String(u) === String(req.account?._id)));
 export { User };

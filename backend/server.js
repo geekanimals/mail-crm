@@ -27,7 +27,6 @@ import newsletterRoutes from './routes/newsletter.js';
 import { admin as websiteLeadRoutes, hook as websiteLeadHook } from './routes/website-leads.js';
 import insightsRoutes, { ensureDefaultAccounts } from './insights/index.js';
 import { Company, Contact, Notification, Reply, getSetting, setSetting } from './models.js';
-import { syncPipeline } from './worker.js';
 
 checkConfig();
 
@@ -148,11 +147,7 @@ async function migrate() {
     await setSetting('cleanup_test_2026_10_22', true);
   });
 
-  // companies whose people replied earlier move to Hot lead / Opportunity
-  await step('pipeline sync', async () => {
-    const moved = await syncPipeline();
-    if (moved) console.log(`[pipeline] ${moved} compan${moved > 1 ? 'ies' : 'y'} moved forward from earlier replies`);
-  });
+  // (no automatic pipeline sync any more: a reply moves a company only after a person decides in Needs you)
 }
 
 mongoose

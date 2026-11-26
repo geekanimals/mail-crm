@@ -34,16 +34,21 @@ const REFERRAL_FOLLOW_UPS = [
 ];
 const REFERRAL_INTRO = { key: 'referral_intro', name: 'Referral intro', body: 'Hi {{firstName}},\n\n{{referrer}} suggested I get in touch with you about creator campaigns for {{company}}.\n\nWe run influencer campaigns with micro and nano creators who are paid in product, so each extra creator costs a unit of stock plus our fee. We have done this for brands like PepsiCo.\n\nWould you be open to a quick 15-minute call this week?' };
 
-const KIND = { reply: 'Reply', meeting: 'Meeting found', meeting_outcome: 'How was the meeting?', manual: 'Emailed by hand', referral: 'Referral' };
-const SUGGEST = { later: 'Future follow-up', not_interested: 'Not interested', ooo: 'Out of office', hot: 'Hot lead', meeting: 'Set the meeting', outcome: '', manual: 'Move the next system email to', referral: 'Email them' };
+const KIND = { reply: 'Reply', meeting: 'Meeting found', meeting_outcome: 'How was the meeting?', manual: 'Emailed by hand', referral: 'Referral', estimate: 'Estimate sent' };
+const SUGGEST = { later: 'Future follow-up', not_interested: 'Not interested', ooo: 'Out of office', hot: 'Hot lead', meeting: 'Set the meeting', outcome: '', manual: 'Move the next system email to', referral: 'Email them', estimate: 'Move to Opportunity', meeting_move: 'Move the meeting to', meeting_cancel: 'Mark the meeting cancelled' };
 const REASONS = [['budget', 'No budget'], ['agency', 'Has an agency / in-house team'], ['not_relevant', 'Not relevant'], ['other', 'Other']];
 const CHOICES = {
   reply: [['later', 'Future follow-up'], ['not_interested', 'Not interested'], ['ooo', 'Out of office'], ['hot', 'Hot lead (interested)'], ['nothing', 'Do nothing']],
   meeting: [['set', 'Set the meeting'], ['nothing', 'Not a meeting']],
   manual: [['continue', 'Continue after that'], ['as_planned', 'Send as planned'], ['stop', 'Stop system emails']],
   referral: [['email', 'Email them now'], ['email_later', 'Email on a date'], ['by_hand', "I'll handle it by hand"]],
+  estimate: [['opportunity', 'Move to Opportunity'], ['nothing', 'No change']],
+  meeting_move: [['set', 'Move it'], ['nothing', 'Keep the old time']],
+  meeting_cancel: [['cancel', 'Mark it cancelled'], ['nothing', 'Keep it']],
   meeting_outcome: [['deal', 'Deal done'], ['details', 'Wants more details'], ['get_back', 'Will get back on a date'], ['later', 'Follow up later'], ['not_interested', 'Not interested'], ['didnt_happen', "Didn't happen"]],
 };
+
+const choicesFor = (a) => (a.kind === 'meeting' && ['meeting_move', 'meeting_cancel'].includes(a.suggestion?.type) ? CHOICES[a.suggestion.type] : CHOICES[a.kind] || []);
 
 const startMsg = (templates, a, key) => {
   const t = templates.find((x) => x.key === key) || templates[0];
@@ -81,7 +86,7 @@ function MessagePicker({ a, templates, value, onChange, label = 'Message' }) {
 
 function ActionCard({ a, settings, onDone, admin = true }) {
   const s = a.suggestion || {};
-  const sug = a.kind === 'reply' ? (['later', 'not_interested', 'ooo', 'hot'].includes(s.type) ? s.type : 'hot') : a.kind === 'meeting' ? 'set' : a.kind === 'manual' ? 'continue' : a.kind === 'referral' ? 'email' : '';
+  const sug = a.kind === 'reply' ? (['later', 'not_interested', 'ooo', 'hot'].includes(s.type) ? s.type : 'hot') : a.kind === 'meeting' ? (s.type === 'meeting_cancel' ? 'cancel' : 'set') : a.kind === 'manual' ? 'continue' : a.kind === 'referral' ? 'email' : a.kind === 'estimate' ? 'opportunity' : '';
   const [choice, setChoice] = useState(sug);
   const [f, setF] = useState(() => ({
     date: ymd(s.date || (s.type === 'later' ? plusMonths(settings.laterMonths) : null)),
@@ -179,7 +184,7 @@ function ActionCard({ a, settings, onDone, admin = true }) {
       )}
 
       <div className="ny-choices">
-        {CHOICES[a.kind].map(([k, l]) => (
+        {choicesFor(a).map(([k, l]) => (
           <button type="button" key={k} className={`${choice === k ? 'on' : ''} ${k === sug ? 'sug' : ''}`} onClick={() => pickChoice(k)}>{l}</button>
         ))}
       </div>
@@ -254,6 +259,8 @@ function ActionCard({ a, settings, onDone, admin = true }) {
           {choice === 'set' && <p className="ny-hint">The meeting task gets this date. After the meeting you will be asked how it went.</p>}
         </div>
       )}
+      {choice === 'opportunity' && <p className="ny-hint">The company moves to <b>Opportunity</b> and the proposal / contract task goes to its owner.</p>}
+      {choice === 'cancel' && <p className="ny-hint">The meeting is marked cancelled. Set a new one from the lead page when it is booked again.</p>}
       {choice === 'deal' && <p className="ny-hint">Opens <b>Convert to account</b> with the checklist.</p>}
 
       <div className="ny-bar">
@@ -336,7 +343,7 @@ function Decided({ onUndo }) {
   };
   if (!list) return <p className="muted">Loading…</p>;
   if (!list.length) return <p className="empty">Nothing decided yet.</p>;
-  const label = (a) => (CHOICES[a.kind].find(([k]) => k === a.decision?.choice) || [null, a.decision?.note || a.status])[1];
+  const label = (a) => (choicesFor(a).find(([k]) => k === a.decision?.choice) || [null, a.decision?.note || a.status])[1];
   return (
     <div className="ny-list">
       {list.map((a) => (

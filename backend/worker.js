@@ -191,7 +191,7 @@ export async function movePipeline(contact) {
 }
 
 // real replies (not out-of-office, not "unsubscribe") from people of this company
-async function stageFromReplies(companyId) {
+export async function stageFromReplies(companyId) {
   const people = await Contact.find({ companyId, status: 'replied' }).select('_id').lean();
   if (!people.length) return null;
   const replies = await Reply.countDocuments({ contact: { $in: people.map((p) => p._id) }, isAutoReply: false });
@@ -631,7 +631,8 @@ async function handleMessage(client, m) {
   const enrollment = log?.enrollment ? await Enrollment.findById(log.enrollment) : null;
   // read what they wrote: "not interested" / "after March" / "on leave" wait for a person in Needs you; the rest is a normal reply
   const verdict = classifyReply(said, at);
-  const reply = await markReplied(contact, { enrollment, from, subject, snippet: newText(parsed.text), messageId: env.messageId, at, pipeline: verdict.type === 'hot' });
+  // follow-ups stop at once (safety); the company only moves after a person decides in Needs you
+  const reply = await markReplied(contact, { enrollment, from, subject, snippet: newText(parsed.text), messageId: env.messageId, at, pipeline: false });
   if (reply) {
     await onReply(contact, verdict, { reply, quote: said, at }).catch((e) => console.error('[needs-you]', e.message));
     // a calendar invite in the email (Google Meet / Zoom / Teams): a meeting suggestion
