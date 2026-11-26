@@ -37,3 +37,13 @@ export const notify = (text, type = 'ok') => window.dispatchEvent(new CustomEven
 export const num = (n) => new Intl.NumberFormat('en-IN').format(n || 0);
 export const date = (d) => (d ? new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—');
 export const stepName = (n) => (n <= 1 ? 'First email' : `Follow-up ${n - 1}`);
+/** a campaign / upload name shown the same way everywhere: "GeekCreative leads 2026-11-26" -> "GeekCreative leads · 26 Nov 2026" */
+export const campaignName = (n) =>
+  String(n || '').replace(/\s*(\d{4})-(\d{2})-(\d{2})\b/, (_m, y, mo, d) => ` · ${new Date(`${y}-${mo}-${d}T12:00:00`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}`);
+/** "7 getting emails · 3 bounced before": why a file campaign emails fewer people than the file had (same 10 as Contacts / Pipeline) */
+export const fileLine = (f, emailing) => {
+  if (!f) return '';
+  const why = [['bounced', 'bounced before'], ['unsubscribed', 'unsubscribed'], ['replied', 'already replied'], ['noEmail', 'no email']]
+    .filter(([k]) => f[k]).map(([k, l]) => `${f[k]} ${l}`);
+  return [`${emailing} getting emails`, ...why].join(' · ');
+};

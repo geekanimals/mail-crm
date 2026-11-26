@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { LuChevronLeft, LuPause, LuPencil, LuPlay, LuPlus, LuTrash2 } from 'react-icons/lu';
-import { api, date, num, notify, stepName } from '@/lib/api';
+import { api, campaignName, date, fileLine, num, notify, stepName } from '@/lib/api';
 
 // New campaigns start with the fixed follow-ups from backend/templates.js (only name + company change)
 const fromFixed = (texts, every) => texts.map((body) => ({ delayDays: every, body }));
@@ -165,7 +165,8 @@ function Detail({ id, onBack, onEdit }) {
       <button className="cp-back" onClick={onBack}><LuChevronLeft /> Campaign history</button>
       <div className="page-title">
         <div>
-          <h1>{c.name} <span className={`badge ${c.status}`}>{c.status}</span></h1>
+          <h1>{campaignName(c.name)} <span className={`badge ${c.status}`}>{c.status}</span></h1>
+          {c.file && c.file.inFile !== s.contacts && <p className="cp-file">{num(c.file.inFile)} people in this file · {fileLine(c.file, num(s.contacts))}. People who bounced, unsubscribed or replied before are saved in Contacts and Pipeline but never emailed.</p>}
           <p>{c.fromFile ? `First email from your file + ${c.fixedFollowUps} fixed follow-ups · every ${c.gap} working days` : `${total} emails · subject: ${c.subject}`}{c.ccUsed ? ` · CC ${c.ccUsed}` : ''}</p>
         </div>
         <div className="row">
@@ -177,7 +178,7 @@ function Detail({ id, onBack, onEdit }) {
       </div>
 
       <div className="cp-stats">
-        {[['Contacts', s.contacts], ['In progress', s.active], ['Sent', s.sent], ['Opened', `${s.openRate}%`], ['Replied', `${s.replied} (${s.replyRate}%)`], ['Unsubscribed', s.unsubscribed]].map(([l, v]) => (
+        {[['Contacts', c.file ? c.file.inFile : s.contacts], ...(c.file && c.file.inFile !== s.contacts ? [['Getting emails', s.contacts]] : []), ['In progress', s.active], ['Sent', s.sent], ['Opened', `${s.openRate}%`], ['Replied', `${s.replied} (${s.replyRate}%)`], ['Unsubscribed', s.unsubscribed]].map(([l, v]) => (
           <div key={l} className="card"><span>{l}</span><b>{typeof v === 'number' ? num(v) : v}</b></div>
         ))}
       </div>
@@ -201,7 +202,7 @@ function Detail({ id, onBack, onEdit }) {
         <div className="row cp-start">
           <select value={batch} onChange={(e) => setBatch(e.target.value)}>
             <option value="">All contacts</option>
-            {batches.map((b) => <option key={b} value={b}>Import: {b}</option>)}
+            {batches.map((b) => <option key={b} value={b}>Import: {campaignName(b)}</option>)}
           </select>
           <label className="cp-check"><input type="checkbox" checked={onlyNew} onChange={(e) => setOnlyNew(e.target.checked)} /> Only never-emailed contacts</label>
           <button className="btn" onClick={() => act('start', { batch, onlyNew })}>Start</button>
@@ -252,6 +253,7 @@ const css = `
 .cp-timeline small { display: block; font-weight: 500; font-size: 11px; color: #64748b; }
 .cp-fu { border: 1px solid rgba(148,163,184,.25); border-radius: 12px; padding: 12px; margin-bottom: 12px; display: flex; flex-direction: column; gap: 8px; font-size: 13.5px; }
 .cp-remove { margin-left: auto; color: #e11d48; }
+.cp-file { margin: 6px 0 0; color: #b45309; font-size: 13.5px; }
 .cp-back { display: inline-flex; align-items: center; gap: 4px; background: none; border: 0; color: #64748b; font-weight: 600; cursor: pointer; align-self: flex-start; }
 .cp-back:hover { color: var(--c-700); }
 .cp-danger { color: #e11d48; }

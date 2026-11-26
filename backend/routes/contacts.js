@@ -222,7 +222,7 @@ router.post(
       if (seen.has(email)) { dupInFile.push(`${str(r.name, 80) || email} (${email})`); continue; }
       seen.add(email);
       const s = str(r.status, 40).toLowerCase();
-      const status = /unsub/.test(s) ? 'unsubscribed' : /repl/.test(s) ? 'replied' : /bounce/.test(s) ? 'bounced' : /sent|contacted|emailed/.test(s) ? 'contacted' : 'new';
+      const status = EMAIL_CHECK.test(s) ? 'new' : /unsub/.test(s) ? 'unsubscribed' : /repl/.test(s) ? 'replied' : /bounce/.test(s) ? 'bounced' : /sent|contacted|emailed/.test(s) ? 'contacted' : 'new';
       valid.push({ ...fields(r), email, status, batch, source: `File: ${batch}`, messages: cleanMessages(r.messages), fields: cleanFields(r.fields), pipeline: rowStage(r) });
     }
 
@@ -290,9 +290,12 @@ router.post(
  * lastSent = date of that last email (2026-10-15 / 15-10-2026 / 15/10/2026). Empty = next email goes today.
  * The next email goes N working days after lastSent, as "Re: <subject>" with the fixed follow-up text.
  */
+const EMAIL_CHECK = /^(verified|valid|risky|unknown|accept.?all|deliverable)$|catch.?all|may bounce/;
 export function parseStage(v) {
   const s = String(v || '').toLowerCase().replace(/[_]+/g, ' ').trim();
   if (!s || /^(new|fresh|not sent|pending|0)$/.test(s)) return { sent: 0 };
+  // an email check result ("verified", "catch-all domain, may bounce") is not a status: such leads are new, never "bounced"
+  if (EMAIL_CHECK.test(s)) return { sent: 0 };
   if (/unsub/.test(s)) return { status: 'unsubscribed' };
   if (/bounce/.test(s)) return { status: 'bounced' };
   if (/repl/.test(s)) return { status: 'replied' };

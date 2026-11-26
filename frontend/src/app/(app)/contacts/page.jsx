@@ -4,7 +4,7 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import { LuCalendarClock, LuChevronLeft, LuChevronRight, LuExternalLink, LuFileSpreadsheet, LuPause, LuPencil, LuPlay, LuUserPlus, LuX } from 'react-icons/lu';
-import { api, date, num, notify, stepName } from '@/lib/api';
+import { api, campaignName, date, num, notify, stepName } from '@/lib/api';
 
 const TABS = ['', 'new', 'contacted', 'replied', 'unsubscribed', 'bounced'];
 const SEQS = [['', 'Everyone'], ['running', 'Follow-ups running'], ['paused', 'Paused'], ['none', 'Not in follow-ups']];
@@ -450,7 +450,7 @@ export default function ContactsPage() {
             {open.emails.length === 0 && <p className="muted small">No emails sent yet.</p>}
             {open.emails.map((m) => (
               <div key={m._id} className="ct-item">
-                <b>{stepName(m.step)}</b> · {m.campaign?.name || ''}
+                <b>{stepName(m.step)}</b> · {campaignName(m.campaign?.name)}
                 <small>{m.subject}</small>
                 <small>{date(m.sentAt)} {m.status === 'failed' ? `· failed: ${m.error}` : ''}{m.openedAt ? ' · opened' : ''}</small>
               </div>

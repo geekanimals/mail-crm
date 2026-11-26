@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import mongoose from 'mongoose';
 import { config } from '../config.js';
-import { Campaign, EmailLog, Enrollment } from '../models.js';
+import { Campaign, Contact, EmailLog, Enrollment } from '../models.js';
 import { enroll, globalCc, runQueue, withSignature } from '../worker.js';
 import { parseCc } from '../mail.js';
 import { FOLLOW_UPS } from '../templates.js';
@@ -56,6 +56,28 @@ export async function campaignStats(ids) {
   return out;
 }
 
+/**
+ * A campaign made from an uploaded file: how many people the file had and why some get no emails.
+ * Worked out from the contacts that file saved (their batch = the campaign name), so it is right for old uploads too.
+ * People already in the CRM before the upload are not saved again, so they are not counted here.
+ */
+export async function fileReport(campaigns) {
+  const names = campaigns.filter((c) => c.fromFile).map((c) => c.name);
+  if (!names.length) return {};
+  const rows = await Contact.aggregate([
+    { $match: { batch: { $in: names } } },
+    { $group: { _id: { batch: '$batch', status: '$status', noEmail: { $in: [{ $ifNull: ['$email', ''] }, ['']] } }, n: { $sum: 1 } } },
+  ]);
+  const out = {};
+  for (const r of rows) {
+    const o = (out[r._id.batch] ||= { inFile: 0, bounced: 0, unsubscribed: 0, replied: 0, noEmail: 0 });
+    o.inFile += r.n;
+    if (r._id.noEmail) o.noEmail += r.n;
+    else if (['bounced', 'unsubscribed', 'replied'].includes(r._id.status)) o[r._id.status] += r.n;
+  }
+  return out;
+}
+
 router.get(
   '/defaults',
   ah(async (_req, res) =>
@@ -83,9 +105,9 @@ router.get(
       Campaign.countDocuments(filter),
       Campaign.aggregate([...(q ? [{ $match: { name: filter.name } }] : []), { $group: { _id: '$status', n: { $sum: 1 } } }]),
     ]);
-    const stats = await campaignStats(list.map((c) => c._id));
+    const [stats, files] = await Promise.all([campaignStats(list.map((c) => c._id)), fileReport(list)]);
     res.json({
-      list: list.map((c) => ({ _id: c._id, name: c.name, status: c.status, createdAt: c.createdAt, fromFile: c.fromFile, emails: c.fromFile ? null : 1 + (c.followUps || []).length, stats: stats[c._id] })),
+      list: list.map((c) => ({ _id: c._id, name: c.name, status: c.status, createdAt: c.createdAt, fromFile: c.fromFile, emails: c.fromFile ? null : 1 + (c.followUps || []).length, stats: stats[c._id], file: files[c.name] || null })),
       total,
       page,
       pages: Math.max(1, Math.ceil(total / limit)),
@@ -105,7 +127,7 @@ router.get(
       campaignStats([oid]),
       Enrollment.find({ campaign: id }).sort({ updatedAt: -1 }).limit(200).populate('contact', 'name email messages.day').lean(),
     ]);
-    res.json({ ...c, stats: stats[id], people, fixedFollowUps: FOLLOW_UPS.length, gap: c.gapDays || config.intervalDays, ccUsed: c.cc ?? (await globalCc()) });
+    res.json({ ...c, stats: stats[id], people, fixedFollowUps: FOLLOW_UPS.length, gap: c.gapDays || config.intervalDays, ccUsed: c.cc ?? (await globalCc()), file: (await fileReport([c]))[c.name] || null });
   })
 );
 

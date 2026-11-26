@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { LuChevronLeft, LuChevronRight, LuFileSpreadsheet, LuMailOpen, LuPlus, LuReply, LuSearch, LuSend, LuUsers } from 'react-icons/lu';
-import { api, date, num, notify } from '@/lib/api';
+import { api, campaignName, date, fileLine, num, notify } from '@/lib/api';
 
 const dayName = (iso, long = false) => new Date(`${iso}T12:00:00`).toLocaleDateString('en-IN', long ? { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' } : { day: 'numeric', month: 'short' });
 
@@ -178,10 +178,10 @@ function CampaignHistory() {
               <tbody>
                 {h.list.map((c) => (
                   <tr key={c._id} className="dash-row" onClick={() => router.push(`/campaigns?open=${c._id}`)}>
-                    <td><Link href={`/campaigns?open=${c._id}`} onClick={(e) => e.stopPropagation()}><b>{c.name}</b></Link><small>{date(c.createdAt)}</small></td>
+                    <td><Link href={`/campaigns?open=${c._id}`} onClick={(e) => e.stopPropagation()}><b>{campaignName(c.name)}</b></Link><small>{c.fromFile ? 'Uploaded' : 'Created'} {date(c.createdAt)}</small></td>
                     <td data-label="Status"><span className={`badge ${c.status}`}>{c.status}</span></td>
                     <td data-label="Emails">{c.fromFile ? 'From file' : c.emails}</td>
-                    <td data-label="Contacts">{num(c.stats.contacts)}</td>
+                    <td data-label="Contacts">{num(c.file ? c.file.inFile : c.stats.contacts)}{c.file && c.file.inFile !== c.stats.contacts && <small className="dash-file">{fileLine(c.file, num(c.stats.contacts))}</small>}</td>
                     <td data-label="Sent">{num(c.stats.sent)}</td>
                     <td data-label="Opened">{num(c.stats.opened)}<small>{c.stats.openRate}%</small></td>
                     <td data-label="Replied">{num(c.stats.replied)}<small>{c.stats.replyRate}%</small></td>
@@ -241,6 +241,7 @@ const css = `
 .dash-search svg { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: #64748b; }
 .dash-search input { width: 100%; padding-left: 36px; }
 .dash-row { cursor: pointer; }
+.dash-file { color: #b45309 !important; }
 .dash-row:hover td { background: rgba(50,193,223,.06); }
 .dash-pager { display: flex; align-items: center; justify-content: center; gap: 14px; margin-top: 14px; font-size: 13.5px; color: #64748b; flex-wrap: wrap; }
 .dash-chart { position: relative; height: 270px; display: flex; align-items: stretch; gap: 6px; padding: 0 0 0 34px; border-bottom: 1px solid rgba(148,163,184,.25); margin-bottom: 10px; }

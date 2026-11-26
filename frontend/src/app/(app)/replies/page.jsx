@@ -3,7 +3,7 @@
 // they do NOT stop follow-ups and do NOT move the company in the pipeline.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { LuCheck, LuRefreshCw, LuReply } from 'react-icons/lu';
-import { api, date, notify, stepName } from '@/lib/api';
+import { api, campaignName, date, notify, stepName } from '@/lib/api';
 
 const STAGE = { cold: 'Cold lead', hot: 'Hot lead', opportunity: 'Opportunity', account: 'Account', old_client: 'Old client' };
 
@@ -93,7 +93,7 @@ export default function RepliesPage() {
                 <div className="row rp-tags">
                   {r.isAutoReply && <span className="badge bounced">Auto-reply · follow-ups continue</span>}
                   {r.contact?.companyId && <span className={`rp-stage ${r.contact.companyId.stage}`}>{STAGE[r.contact.companyId.stage]}</span>}
-                  {r.campaign && <span className="badge active">{r.campaign.name}</span>}
+                  {r.campaign && <span className="badge active">{campaignName(r.campaign.name)}</span>}
                   {r.afterStep ? <span className="badge replied">after {stepName(r.afterStep)}</span> : null}
                 </div>
                 {r.subject && <p className="rp-subject">{r.subject}</p>}

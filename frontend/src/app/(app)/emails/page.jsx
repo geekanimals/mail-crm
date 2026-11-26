@@ -4,7 +4,7 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { LuChevronLeft, LuChevronRight, LuSearch, LuX } from 'react-icons/lu';
-import { api, num, notify, stepName } from '@/lib/api';
+import { api, campaignName, num, notify, stepName } from '@/lib/api';
 
 const SHOWS = [['sent', 'Sent'], ['opened', 'Opened'], ['clicked', 'Clicked']];
 const when = (d) => (d ? new Date(d).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : '');
@@ -87,7 +87,7 @@ export default function EmailsPage() {
                     <tr key={e._id}>
                       <td><b>{e.contact?.name || e.contact?.email || 'Deleted contact'}</b><small>{[e.contact?.email, e.contact?.company].filter(Boolean).join(' · ')}</small></td>
                       <td data-label="Email"><span className="em-step">{stepName(e.step)}</span><small className="em-subject">{e.subject}</small></td>
-                      <td data-label="Campaign">{e.campaign ? <Link href={`/campaigns?open=${e.campaign._id}`}>{e.campaign.name}</Link> : '—'}</td>
+                      <td data-label="Campaign">{e.campaign ? <Link href={`/campaigns?open=${e.campaign._id}`}>{campaignName(e.campaign.name)}</Link> : '—'}</td>
                       <td data-label="Sent">{when(e.sentAt)}</td>
                       <td data-label="Opened">{e.openedAt ? <span className="em-yes">{when(e.openedAt)}</span> : <span className="muted">—</span>}</td>
                       <td data-label="Clicked">{e.clickedAt ? <span className="em-yes">{when(e.clickedAt)}</span> : <span className="muted">—</span>}</td>

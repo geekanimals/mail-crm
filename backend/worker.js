@@ -5,7 +5,7 @@ import cron from 'node-cron';
 import { ImapFlow } from 'imapflow';
 import { simpleParser } from 'mailparser';
 import { config, imapReady, smtpReady } from './config.js';
-import { Campaign, Contact, EmailLog, Enrollment, Reply, Suppression, bumpStage, getSetting, setSetting, remember, notify, upsertCompany } from './models.js';
+import { Campaign, Contact, EmailLog, Enrollment, Reply, STAGE_RANK, Suppression, bumpStage, getSetting, setSetting, remember, notify, upsertCompany } from './models.js';
 import { buildEmail, sendMail, isBadAddress, parseCc, unsubscribeUrl } from './mail.js';
 import { FOLLOW_UPS, SIGNATURE, SIGNATURE_KEY } from './templates.js';
 import { joinNewsletter, runNewsletters } from './newsletter.js';
@@ -172,16 +172,29 @@ async function stageFromReplies(companyId) {
   return Math.max(replies, 1) >= 2 ? 'opportunity' : 'hot';
 }
 
-/** Run at start: companies whose people already replied before this feature existed get their stage too. */
+/**
+ * Run at start: companies whose people already replied before this feature existed get their stage too.
+ * Same rule as stageFromReplies (1 real reply -> Hot lead, 2 or more -> Opportunity; only ever forward),
+ * but in 4 queries for all companies together instead of 5 per company.
+ */
 export async function syncPipeline() {
-  const ids = await Contact.distinct('companyId', { status: 'replied', companyId: { $exists: true } });
+  const people = await Contact.find({ status: 'replied', companyId: { $exists: true, $ne: null } }).select('_id companyId').lean();
+  if (!people.length) return 0;
+  const ids = [...new Set(people.map((p) => String(p.companyId)))];
+  const [counts, companies] = await Promise.all([
+    Reply.aggregate([{ $match: { contact: { $in: people.map((p) => p._id) }, isAutoReply: false } }, { $group: { _id: '$contact', n: { $sum: 1 } } }]),
+    mongoose.connection.collection('companies').find({ _id: { $in: ids.map((i) => new mongoose.Types.ObjectId(i)) } }, { projection: { stage: 1 } }).toArray(),
+  ]);
+  const repliesOf = Object.fromEntries(counts.map((c) => [String(c._id), c.n]));
+  const replies = {}; // company -> real replies from its people
+  for (const p of people) replies[String(p.companyId)] = (replies[String(p.companyId)] || 0) + (repliesOf[String(p._id)] || 0);
   let moved = 0;
-  for (const id of ids) {
-    const stage = await stageFromReplies(id);
-    const before = (await mongoose.connection.collection('companies').findOne({ _id: id }, { projection: { stage: 1 } }))?.stage;
-    await bumpStage(id, stage);
-    const after = (await mongoose.connection.collection('companies').findOne({ _id: id }, { projection: { stage: 1 } }))?.stage;
-    if (before !== after) moved++;
+  for (const c of companies) {
+    const target = Math.max(replies[String(c._id)] || 0, 1) >= 2 ? 'opportunity' : 'hot';
+    if (STAGE_RANK[target] > (STAGE_RANK[c.stage] ?? 0)) {
+      await bumpStage(c._id, target); // only the few that really move are touched (and get their lifecycle tasks)
+      moved++;
+    }
   }
   return moved;
 }

@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import { LuBan, LuBell, LuBriefcase, LuCheck, LuFileSpreadsheet, LuFileUser, LuGlobe, LuHandshake, LuKanban, LuSparkles, LuLightbulb, LuNewspaper, LuLayoutDashboard, LuLogOut, LuMenu, LuReply, LuSend, LuSettings, LuTrendingUp, LuUserCog, LuUsers, LuX } from 'react-icons/lu';
-import { api, getToken, setRole, setToken } from '@/lib/api';
+import { api, campaignName, getToken, setRole, setToken } from '@/lib/api';
 
 const ICON = process.env.NEXT_PUBLIC_LOGO_ICON_URL || '/fav.png'; // square logo (always shown)
 const WORDMARK = process.env.NEXT_PUBLIC_BRAND_LOGO_URL || '/logo.png'; // brand name, next to the logo when the sidebar opens
@@ -217,7 +217,7 @@ export default function AppLayout({ children }) {
                               <Link href={v.href} className="bell-text" onClick={() => { setBellOpen(false); if (!n.read) markRead(n._id); }}>
                                 <b>{v.title}</b>
                                 {(n.text || v.extra) && <span>{n.text || v.extra}</span>}
-                                <small>{ago(n.createdAt)}{n.campaign?.name ? ` · ${n.campaign.name}` : ''}</small>
+                                <small>{ago(n.createdAt)}{n.campaign?.name ? ` · ${campaignName(n.campaign.name)}` : ''}</small>
                               </Link>
                               {!n.read && <button className="bell-done" onClick={() => markRead(n._id)} title="Mark as read" aria-label="Mark as read"><LuCheck /></button>}
                             </div>

@@ -91,11 +91,13 @@ app.use((err, _req, res, _next) => {
 
 // database fixes (safe to run every start). Each step runs on its own, so one problem never blocks the rest.
 async function step(name, fn) {
+  const t0 = Date.now();
   try {
     await fn();
   } catch (e) {
     console.error(`[db] ${name}:`, e.message);
   }
+  console.log(`[startup] ${name}: ${((Date.now() - t0) / 1000).toFixed(1)}s`); // how long each start-up step takes
 }
 async function dropOldIndex(model, name, wantKey) {
   const idx = await model.collection.indexes();
@@ -148,9 +150,12 @@ mongoose
   .connect(config.mongoUri)
   .then(async () => {
     console.log('[db] MongoDB connected');
-    await migrate();
+    // open for requests at once; the database fixes below run in the background (each is safe to run any time)
     app.listen(config.port, () => console.log(`[server] Geek CRM API on http://localhost:${config.port}`));
-    startWorker();
+    const t0 = Date.now();
+    await migrate();
+    console.log(`[startup] all steps: ${((Date.now() - t0) / 1000).toFixed(1)}s`);
+    startWorker(); // sending / inbox start after the fixes, as before
   })
   .catch((e) => {
     console.error('[db] connection failed:', e.message);

@@ -9,7 +9,7 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { LuCalendarDays, LuDownload, LuFileSpreadsheet, LuPlay, LuUpload } from 'react-icons/lu';
-import { api, num, notify } from '@/lib/api';
+import { api, campaignName, num, notify } from '@/lib/api';
 
 // [key, label, rules tried in order, never these] - e.g. "company_name" is never taken as the person's name
 const BASIC = [
@@ -25,7 +25,7 @@ const BASIC = [
   ['signal', 'Buying signal', [/buying signal/i, /^signal$/i], /$^/],
   ['notes', 'Notes / remarks', [/^remarks?$/i, /^notes?$/i], /$^/],
   ['leadDate', 'Lead date', [/lead date/i, /date_added|date added/i], /$^/],
-  ['status', 'Status', [/^status$/i, /status|stage/i], /$^/],
+  ['status', 'Status', [/^status$/i, /status|stage/i], /e-?mail.?status|verif|valid|deliver/i], // the outreach status, never an email check column (email_status: verified / catch-all)
   ['pipeline', 'Pipeline stage (per person)', [/^pipeline/i], /$^/],
   ['referredBy', 'Referred by', [/referr?ed.?by|^referral/i], /$^/],
   ['lastSent', 'Last email sent on', [/sent.?(on|date)/i, /^last/i], /$^/],
@@ -561,7 +561,7 @@ export default function ImportPage() {
               Add to an existing campaign (optional)
               <select value={campaignId} onChange={(e) => setCampaignId(e.target.value)}>
                 <option value="">— no —</option>
-                {campaigns.map((c) => <option key={c._id} value={c._id}>{c.name}</option>)}
+                {campaigns.map((c) => <option key={c._id} value={c._id}>{campaignName(c.name)}</option>)}
               </select>
             </label>}
           </div>
