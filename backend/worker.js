@@ -6,7 +6,7 @@ import { ImapFlow } from 'imapflow';
 import { simpleParser } from 'mailparser';
 import { config, imapReady, smtpReady } from './config.js';
 import { Campaign, Contact, EmailLog, Enrollment, Reply, STAGE_RANK, Suppression, bumpStage, getSetting, setSetting, remember, notify, upsertCompany } from './models.js';
-import { buildEmail, sendMail, isBadAddress, parseCc, unsubscribeUrl } from './mail.js';
+import { bounceReason, buildEmail, sendMail, isBadAddress, parseCc, unsubscribeUrl } from './mail.js';
 import { FOLLOW_UPS, SIGNATURE, SIGNATURE_KEY } from './templates.js';
 import { joinNewsletter, runNewsletters } from './newsletter.js';
 
@@ -206,11 +206,12 @@ export async function markUnsubscribed(contact) {
   await notify('unsubscribed', contact);
 }
 
-async function markBounced(contact) {
-  await Contact.updateOne({ _id: contact._id, status: { $ne: 'unsubscribed' } }, { $set: { status: 'bounced' } });
+async function markBounced(contact, why = null) {
+  const bounce = why ? { ...why, at: new Date() } : undefined;
+  await Contact.updateOne({ _id: contact._id, status: { $ne: 'unsubscribed' } }, { $set: { status: 'bounced', ...(bounce ? { bounce } : {}) } });
   await stopAll(contact._id, 'bounced');
   await remember(contact.email, 'bounced');
-  await notify('bounced', contact);
+  await notify('bounced', contact, bounce ? { text: bounce.reason } : {});
 }
 
 /* ---------------- add contacts to a campaign ---------------- */
@@ -330,7 +331,7 @@ async function sendStep(enr, campaign) {
     await EmailLog.create({ campaign: campaign._id, contact: contact._id, enrollment: enr._id, step: stepNo, subject: email.subject, status: 'failed', error: msg }).catch(() => {});
     await notify('failed', contact, { campaign: campaign._id, step: stepNo, text: msg });
     if (isBadAddress(e)) {
-      await markBounced(contact);
+      await markBounced(contact, { ...bounceReason(msg), via: 'send' });
     } else {
       const attempts = enr.attempts + 1;
       await Enrollment.updateOne(
@@ -533,7 +534,7 @@ async function handleMessage(client, m) {
     const raw = (await source())?.toString() || '';
     const log = await EmailLog.findOne({ messageId: { $in: raw.match(/<geekcrm\.[^<>\s]+>/g) || [] } });
     const contact = log && (await Contact.findById(log.contact));
-    if (contact) await markBounced(contact);
+    if (contact) await markBounced(contact, { ...bounceReason(raw), via: 'inbox' });
     return false;
   }
 
@@ -575,11 +576,77 @@ async function handleMessage(client, m) {
 }
 
 /* ---------------- start the timers ---------------- */
+/**
+ * Bounces from before the reason was kept: find each one's reason once.
+ * First from the failed send (the server's answer is saved with it), then from the bounce emails still in the inbox
+ * (read only - nothing in the mailbox is changed). Safe to run again; only contacts with no reason yet are touched.
+ */
+export async function fillBounceReasons({ redo = false } = {}) {
+  const todo = await Contact.find({ status: 'bounced', ...(redo ? {} : { 'bounce.reason': { $exists: false } }) }).select('_id email').lean();
+  if (!todo.length) return { filled: 0, left: 0 };
+  let filled = 0;
+  const left = new Set(todo.map((c) => String(c._id)));
+  const save = async (id, why, at) => {
+    await Contact.updateOne({ _id: id, ...(redo ? {} : { 'bounce.reason': { $exists: false } }) }, { $set: { bounce: { ...why, at } } });
+    left.delete(String(id));
+    filled++;
+  };
+  // 1. bounced while sending: the server's answer is on the failed email
+  for (const log of await EmailLog.find({ contact: { $in: todo.map((c) => c._id) }, status: 'failed', error: { $exists: true } }).sort({ sentAt: -1 }).lean()) {
+    if (left.has(String(log.contact))) await save(log.contact, { ...bounceReason(log.error), via: 'send' }, log.sentAt);
+  }
+  // 2. bounced later: the bounce email in the inbox names the email it is about (<geekcrm....> message id)
+  if (left.size && imapReady()) {
+    const { host, port, secure, user, pass } = config.imap;
+    const client = new ImapFlow({ host, port, secure, auth: { user, pass }, logger: false });
+    client.on('error', (e) => console.warn('[bounces] imap:', e?.code || e?.message));
+    try {
+      await client.connect();
+      const lock = await client.getMailboxLock(config.imap.mailbox);
+      try {
+        const since = new Date(Date.now() - 120 * DAY);
+        const queries = ['mailer-daemon', 'postmaster'].map((f) => ({ from: f, since }))
+          .concat(['Undeliverable', 'Delivery Status Notification', 'failure notice', 'Returned mail', 'Delivery failed', 'Mail delivery failed'].map((sub) => ({ subject: sub, since })));
+        const uids = new Set();
+        for (const q of queries) for (const u of (await client.search(q, { uid: true })) || []) uids.add(u);
+        for (const uid of [...uids].sort((a, b) => b - a)) {
+          if (!left.size) break;
+          const msg = await client.fetchOne(String(uid), { source: true, envelope: true }, { uid: true });
+          const raw = msg?.source?.toString() || '';
+          const log = await EmailLog.findOne({ messageId: { $in: raw.match(/<geekcrm\.[^<>\s]+>/g) || [] } }).select('contact').lean();
+          // no message id in it: the bounce email names the address it is about (Final-Recipient / Original-Recipient)
+          const named = (raw.match(/(?:Final|Original)-Recipient:\s*rfc822;\s*<?([^\s<>;]+@[^\s<>;]+)/gi) || []).map((x) => x.replace(/.*rfc822;\s*<?/i, '').replace(/>$/, '').toLowerCase());
+          const who = log ? String(log.contact) : String(todo.find((c) => c.email && named.includes(c.email.toLowerCase()))?._id || '');
+          if (who && left.has(who)) await save(who, { ...bounceReason(raw), via: 'inbox' }, msg.envelope?.date || new Date());
+        }
+      } finally {
+        lock.release();
+      }
+      await client.logout();
+    } catch (e) {
+      console.warn('[bounces] could not read the inbox:', e.message);
+      client.close();
+    }
+  }
+  console.log(`[bounces] reasons found for ${filled} bounced contact(s)${left.size ? `, ${left.size} without a bounce email` : ''}`);
+  return { filled, left: left.size };
+}
+
 export function startWorker() {
   cron.schedule('* * * * *', () => runQueue());
   cron.schedule('* * * * *', () => runNewsletters());
   if (imapReady()) {
     cron.schedule(`*/${config.replyCheckMinutes} * * * *`, () => checkReplies().catch((e) => console.error('[replies]', e.message)));
     setTimeout(() => checkReplies().catch((e) => console.error('[replies]', e.message)), 5000);
+    // older bounces: find their reason once (version 2 = read every bounce again with the better reason reader)
+    setTimeout(async () => {
+      try {
+        const v = await getSetting('bounce_reasons_v', 0);
+        await fillBounceReasons({ redo: v < 2 });
+        if (v < 2) await setSetting('bounce_reasons_v', 2);
+      } catch (e) {
+        console.error('[bounces]', e.message);
+      }
+    }, 60000);
   }
 }

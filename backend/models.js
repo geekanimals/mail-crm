@@ -36,6 +36,8 @@ const contactSchema = new Schema(
     unsubscribeToken: { type: String, unique: true, default: () => crypto.randomBytes(24).toString('hex') },
     lastContactedAt: Date,
     repliedAt: Date,
+    // why the last email bounced, read from the receiving server's answer or the bounce email in the inbox
+    bounce: new Schema({ reason: String, code: String, detail: String, at: Date, via: String }, { _id: false }),
     newsletter: { type: Boolean, default: false, index: true }, // finished the sequence with no reply -> newsletter list
     newsletterAt: Date,
   },

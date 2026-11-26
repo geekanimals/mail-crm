@@ -321,7 +321,15 @@ export default function ContactsPage() {
                     </td>
                     <td data-label="Phone">{/^(none|n\/?a|-)$/i.test(c.phone || '') ? '—' : c.phone || '—'}</td>
                     <td data-label="LinkedIn">{empty(c.linkedin) ? '—' : <Value v={/^https?:/i.test(c.linkedin) ? c.linkedin : `https://${c.linkedin}`} />}</td>
-                    <td data-label="Email status"><span className={`badge ${c.status}`}>{c.status}</span></td>
+                    <td data-label="Email status">
+                      <span className={`badge ${c.status}`}>{c.status}</span>
+                      {c.status === 'bounced' && (
+                        <span className="ct-bounce" title={c.bounce?.detail || ''}>
+                          <b>{c.bounce?.reason || 'Reason not found yet'}</b>
+                          {c.bounce?.detail && <i>{c.bounce.detail}</i>}
+                        </span>
+                      )}
+                    </td>
                     <td data-label="Last emailed">{date(c.lastContactedAt || c.followUp?.lastSentAt)}</td>
                     {extra.map((k) => {
                       const v = cellOf(c, k);
@@ -366,6 +374,17 @@ export default function ContactsPage() {
               <span className={`badge ${oc.status}`}>{oc.status}</span>
               {company && <Link href={`/pipeline?open=${company._id}`} className={`stage ${company.stage}`}>{company.name} · {STAGE[company.stage]}</Link>}
             </div>
+            {oc.status === 'bounced' && (
+              <div className="ct-bounce-box">
+                <b>Why the email bounced: {oc.bounce?.reason || 'reason not found yet'}</b>
+                {oc.bounce?.detail && <span>Their mail server said: “{oc.bounce.detail}”{oc.bounce.code ? ` (${oc.bounce.code})` : ''}</span>}
+                <small>
+                  {oc.bounce?.at ? `${date(oc.bounce.at)} · ` : ''}
+                  {oc.bounce?.via === 'send' ? 'refused while sending' : oc.bounce?.via === 'inbox' ? 'from the bounce email in the inbox' : 'No bounce email was found for this address. It may have been marked bounced in an uploaded file.'}
+                  {' · '}This address is never emailed again.
+                </small>
+              </div>
+            )}
 
             {open.followUp && !edit && (
               <div className="fu-panel">
@@ -416,7 +435,7 @@ export default function ContactsPage() {
                 <dl className="ct-dl">
                   <dt>Email</dt><dd>{oc.email || '—'}</dd>
                   {DETAILS.filter(([k]) => oc[k]).map(([k, l]) => (
-                    <div key={k} className="ct-pair"><dt>{l}</dt><dd><Value v={oc[k]} /></dd></div>
+                    <div key={k} className="ct-pair"><dt>{l}</dt><dd><Value v={k === 'source' || k === 'batch' ? campaignName(oc[k]) : oc[k]} /></dd></div>
                   ))}
                 </dl>
                 {oc.notes && <><h3>Notes</h3><p className="ct-notes">{oc.notes}</p></>}
@@ -470,6 +489,12 @@ export default function ContactsPage() {
 }
 
 const css = `
+.ct-bounce { display: flex; flex-direction: column; gap: 2px; margin-top: 4px; width: 240px; max-width: 60vw; }
+.ct-bounce b { font-size: 11.5px; color: #b45309; }
+.ct-bounce i { font-style: normal; font-size: 11px; color: #78716c; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.ct-bounce-box { display: flex; flex-direction: column; gap: 4px; margin: 10px 0; padding: 10px 12px; border-radius: 12px; background: #fff7ed; border: 1px solid #fed7aa; color: #7c2d12; font-size: 13.5px; }
+.ct-bounce-box span { overflow-wrap: anywhere; }
+.ct-bounce-box small { color: #9a3412; }
 .ct-form { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; align-items: end; }
 .ct-form .row { grid-column: 1 / -1; }
 .ct-count { font-size: 11px; background: rgba(148,163,184,.18); padding: 1px 7px; border-radius: 99px; margin-left: 4px; }

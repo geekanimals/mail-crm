@@ -160,6 +160,37 @@ export async function verifySmtp() {
   }
 }
 
+/**
+ * Why an email bounced, in plain English, from the receiving server's answer or a bounce email
+ * ("Diagnostic-Code: smtp; 550 5.1.1 ... user unknown"). Returns { reason, code, detail }.
+ */
+export function bounceReason(text = '') {
+  const t = String(text).replace(/=\r?\n/g, '').replace(/\r/g, '');
+  const diag = (t.match(/Diagnostic-Code:\s*(?:smtp;)?\s*([^\n]+(?:\n[ \t][^\n]+)*)/i)?.[1] || '').replace(/\s+/g, ' ').trim();
+  const status = t.match(/^Status:\s*([245]\.\d{1,3}\.\d{1,3})/im)?.[1] || '';
+  const smtp = t.match(/\b([45]\d\d)[ -]+([245]\.\d{1,3}\.\d{1,3})?/);
+  const code = [smtp?.[1], status || smtp?.[2]].filter(Boolean).join(' ');
+  // read the server's own answer (never the quoted email under it: your text could contain "block" or "policy")
+  const answer = diag || t.match(/\b([45]\d\d[ -][^\n']{10,300})/)?.[1] || t.split('\n').slice(0, 40).join(' ');
+  const s = answer.toLowerCase();
+  const rules = [
+    [/hop count|mail loop|loop detected|too many hops/, 'Their mail server is set up wrong (mail loop)'],
+    [/no mail-enabled subscriptions|hosted tenant|not configured to receive/, 'Their domain has no working mailboxes'],
+    [/5\.1\.1|user unknown|unknown user|no such user|does not exist|doesn.t exist|address not found|recipient address rejected|invalid recipient|not a valid|mailbox unavailable|account (has been )?(disabled|deleted)|no mailbox/, 'Email address does not exist'],
+    [/5\.1\.2|domain not found|host not found|no such domain|unrouteable|could not be resolved|dns|nxdomain|domain (name )?(does not exist|not exist)/, 'Email domain does not exist'],
+    [/5\.2\.2|mailbox full|quota|over quota|insufficient storage|exceeded storage/, 'Their mailbox is full'],
+    [/5\.2\.1|mailbox disabled|inactive|suspended|blocked account/, 'Their mailbox is disabled'],
+    [/5\.7\.\d|spam|blocked|blacklist|block list|policy|rejected (by|due)|denied|not authori[sz]ed|spf|dkim|dmarc|reputation/, 'Blocked by their mail server (spam / policy)'],
+    [/message too (large|big)|size limit|5\.3\.4/, 'Email too large for their server'],
+    [/^4|\b4\d\d\b|temporar|try again later|deferred|timed? ?out/, 'Temporary problem on their mail server'],
+  ];
+  const hit = rules.find(([re]) => re.test(s));
+  // the server's own words: the Diagnostic-Code, else the line with the 4xx/5xx answer, else the line that gave the reason away
+  const lines = t.split('\n').map((l) => l.trim()).filter(Boolean);
+  const detail = (diag || t.match(/\b([45]\d\d[ -][^\n']{10,200})/)?.[1] || (hit && lines.find((l) => hit[0].test(l.toLowerCase()))) || '').replace(/\s+/g, ' ').trim().slice(0, 300);
+  return { reason: hit ? hit[1] : 'Rejected by their mail server', code: code.slice(0, 20), detail };
+}
+
 // 550-554 on the recipient = address does not exist
 export const isBadAddress = (e) =>
   Number(e?.responseCode) >= 550 && Number(e?.responseCode) <= 554 && /recipient|mailbox|user|address|unknown|not exist/i.test(e?.response || e?.message || '');
