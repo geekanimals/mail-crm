@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { STAGES, plCss } from '@/components/CompanyDetails';
 import { LuChevronLeft, LuChevronRight, LuHandshake } from 'react-icons/lu';
-import { api, date, num, notify } from '@/lib/api';
+import { api, campaignName, date, num, notify } from '@/lib/api';
 
 export default function PipelinePage() {
   const [stage, setStage] = useState('');
@@ -77,7 +77,7 @@ export default function PipelinePage() {
                         <td>
                           <button className="pl-name" onClick={() => open(c._id)}>
                             <b>{c.name}</b>
-                            <small>{[c.industry, c.location].filter(Boolean).join(' · ') || c.source || ''}</small>
+                            <small>{[c.industry, c.location].filter(Boolean).join(' · ') || campaignName(c.source) || ''}</small>
                           </button>
                         </td>
                         <td data-label="Stage">

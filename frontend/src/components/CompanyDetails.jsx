@@ -8,7 +8,8 @@ import { api, date, notify } from '@/lib/api';
 
 export const STAGES = [['cold', 'Cold lead'], ['hot', 'Hot lead'], ['opportunity', 'Opportunity'], ['account', 'Account'], ['old_client', 'Old client']];
 export const STAGE = Object.fromEntries(STAGES);
-const INFO = [['website', 'Website'], ['industry', 'Industry'], ['location', 'Location'], ['linkedin', 'LinkedIn']];
+const INFO = [['website', 'Website'], ['industry', 'Industry'], ['location', 'Location'], ['linkedin', 'Company LinkedIn']];
+const HINT = { website: 'https://brand.com', linkedin: 'linkedin.com/company/…' };
 const EMPTY_MEMBER = { name: '', email: '', phone: '', title: '', linkedin: '' };
 const makePassword = () => {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
@@ -176,7 +177,7 @@ export default function CompanyDetails({ id, onClose, convertFirst, inline = fal
           {INFO.map(([k, l]) => (
             <label className="field" key={k}>{l}
               <span className="pl-inputlink">
-                <input value={info[k]} onChange={(e) => setInfo({ ...info, [k]: e.target.value })} />
+                <input value={info[k]} placeholder={HINT[k] || ''} onChange={(e) => setInfo({ ...info, [k]: e.target.value })} />
                 {isUrl(info[k]) && <a href={info[k]} target="_blank" rel="noopener noreferrer" title="Open"><LuExternalLink /></a>}
               </span>
             </label>
@@ -186,14 +187,19 @@ export default function CompanyDetails({ id, onClose, convertFirst, inline = fal
         </form>
 
         <h3>People ({d.contacts.length})</h3>
+        {inline && d.contacts.length > 0 && <p className="muted small">Click a name to jump to their full details below.</p>}
         {d.contacts.length === 0 && <p className="muted small">No contact points yet.</p>}
         {d.contacts.map((p) => (
-          <div key={p._id} className="pl-person">
+          <div key={p._id} className={`pl-person ${inline ? 'pl-person-compact' : ''}`}>
             <div>
               {onPerson ? <button type="button" className="pl-personlink" onClick={() => onPerson(p._id)}>{p.name || p.email}</button> : <b>{p.name || p.email}</b>}{p.title && <span className="muted"> · {p.title}</span>}
-              <small>{[p.email, p.phone].filter(Boolean).join(' · ') || 'no email / phone'}</small>
-              {p.referredBy && <small className="pl-ref">Referred by {p.referredBy}</small>}
-              <small>{p.sent ? `${p.sent} email(s) sent · last ${date(p.lastSentAt)}` : 'Not emailed yet'}{p.linkedin && <> · <a href={p.linkedin} target="_blank" rel="noopener noreferrer">LinkedIn</a></>}</small>
+              {!inline && (
+                <>
+                  <small>{[p.email, p.phone].filter(Boolean).join(' · ') || 'no email / phone'}</small>
+                  {p.referredBy && <small className="pl-ref">Referred by {p.referredBy}</small>}
+                  <small>{p.sent ? `${p.sent} email(s) sent · last ${date(p.lastSentAt)}` : 'Not emailed yet'}{p.linkedin && <> · <a href={p.linkedin} target="_blank" rel="noopener noreferrer">LinkedIn</a></>}</small>
+                </>
+              )}
             </div>
             <div className="row">
               <span className={`badge ${p.status}`}>{p.status}</span>
@@ -416,4 +422,5 @@ export const plCss = `
 .pl-panel.pl-inline { position: static; width: 100%; max-width: none; height: auto; overflow: visible; border-radius: 22px; box-shadow: 0 12px 34px rgba(30,41,59,.06); border: 1px solid rgba(255,255,255,.85); }
 .pl-personlink { background: none; border: 0; padding: 0; font: inherit; font-weight: 700; color: var(--c-700); cursor: pointer; text-align: left; }
 .pl-personlink:hover { text-decoration: underline; }
+.pl-person.pl-person-compact { padding-top: 8px; padding-bottom: 8px; }
 `;
