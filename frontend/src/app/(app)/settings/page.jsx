@@ -1,6 +1,7 @@
 'use client';
 // Settings: connection status + emergency pause. All values come from the backend .env
 import { useCallback, useEffect, useState } from 'react';
+import NeedsSettings from '@/components/NeedsSettings';
 import { LuCircleCheck, LuMail, LuPause, LuPlay, LuRefreshCw, LuSend, LuZap } from 'react-icons/lu';
 import { api, date, notify } from '@/lib/api';
 
@@ -182,6 +183,8 @@ export default function SettingsPage() {
           <p><span>Last run</span>{s.lastRun ? `${date(s.lastRun)} · ${s.lastResult?.reason || `sent ${s.lastResult?.sent || 0}`}` : '—'}</p>
           <button className="btn ghost sm" onClick={() => call('/api/settings/run', {}, (r) => r.reason ? `Nothing sent: ${r.reason}` : `Sent ${r.sent}`)}><LuSend /> Run send queue now</button>
         </div>
+
+        <NeedsSettings />
 
         <div className="card">
           <h2>Convert to account: checklist</h2>

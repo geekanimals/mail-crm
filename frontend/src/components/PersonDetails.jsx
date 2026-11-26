@@ -117,7 +117,7 @@ export default function PersonDetails({ id, inline = false, onClose, onChanged, 
       {open.emails.length === 0 && <p className="muted small">No emails sent yet.</p>}
       {open.emails.map((m) => (
         <div key={m._id} className="ct-item">
-          <b>{stepName(m.step)}</b> · {campaignName(m.campaign?.name)}
+          <b>{stepName(m.step, m.kind)}</b>{m.campaign?.name ? ` · ${campaignName(m.campaign.name)}` : ''}
           <small>{m.subject}</small>
           <small>
             {date(m.sentAt)} {m.status === 'failed' ? `· failed: ${m.error}` : ''}{m.openedAt ? ' · opened' : ''}
@@ -166,6 +166,9 @@ export default function PersonDetails({ id, inline = false, onClose, onChanged, 
       </div>
       <div className="row ct-badges">
         <span className={`badge ${oc.status}`}>{oc.status}</span>
+        {oc.outcome === 'later' && <span className="stage later">Future follow-up{oc.laterAt ? ` · ${date(oc.laterAt)}` : ''}</span>}
+        {oc.outcome === 'not_interested' && <span className="stage not_interested">Not interested{oc.outcomeReason && oc.outcomeReason !== 'other' ? ` · ${oc.outcomeReason.replace('_', ' ')}` : ''}</span>}
+        {oc.outcome === 'no_reply' && <span className="stage">No reply after the follow-ups</span>}
         {company && <Link href={`/lead?company=${company._id}`} className={`stage ${company.stage}`}>{company.name} · {STAGE[company.stage]}</Link>}
       </div>
       {tab && (
@@ -324,6 +327,8 @@ export const ctCss = `
 .stage.opportunity { background: #fef9c3; color: #a16207; }
 .stage.account { background: #dcfce7; color: #15803d; }
 .stage.old_client { background: #f1f5f9; color: #475569; }
+.stage.later { background: #e0f2fe; color: #0369a1; }
+.stage.not_interested { background: #fee2e2; color: #b91c1c; }
 .ct-actions { gap: 6px; flex-wrap: nowrap; }
 .ct-actions .btn { background: transparent; border-color: transparent; box-shadow: none; color: #64748b; font-weight: 500; }
 .ct-actions .btn:hover { background: var(--c-100); color: var(--c-700); transform: none; }

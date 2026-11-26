@@ -10,6 +10,7 @@ import { Attendance, Documents, Home, Leaves, PasswordForm, Payslips, Profile, R
 import Shell from './Shell';
 import IdeaBucket from '@/lib/ideas';
 import { TeamWebsiteForms } from '@/lib/website-forms';
+import NeedsYou from '@/components/NeedsYou';
 import { openFile } from '@/lib/hr';
 
 const LOGO = process.env.NEXT_PUBLIC_LOGO_ICON_URL || '/fav.png';
@@ -23,6 +24,7 @@ export default function PortalPage() {
   const [pw, setPw] = useState(false); // client: change password box
   const [ideas, setIdeas] = useState(false); // client: Idea Bucket
   const [forms, setForms] = useState([]); // employee: website forms the admin gave them
+  const [needs, setNeeds] = useState(0); // employee: meeting questions waiting for them
   const [toast, setToast] = useState(null);
 
   const load = useCallback(() => {
@@ -32,6 +34,7 @@ export default function PortalPage() {
         if (r.me.role === 'insights') return router.replace('/insights'); // Insights logins only see the Insights Dashboard
         setData(r);
         if (r.me.role === 'team') api('/api/website-leads/mine').then((m) => setForms(m.forms || [])).catch(() => {});
+        if (r.me.role === 'team') api('/api/actions/count').then((c) => setNeeds(c.open || 0)).catch(() => {});
       })
       .catch(() => router.replace('/login'));
   }, [router]);
@@ -87,7 +90,7 @@ export default function PortalPage() {
     return (
       <div className="pt">
         <style>{css + emCss}</style>
-        <Shell me={me} tab={tab} setTab={setTab} hideAccounts={!data.accounts.length} showForms={forms.length > 0} onLogout={logout}>
+        <Shell me={me} tab={tab} setTab={setTab} hideAccounts={!data.accounts.length} showForms={forms.length > 0} needs={needs} onLogout={logout}>
           {tab === 'home' && <Home go={setTab} />}
           {tab === 'tasks' && <Tasks me={me} />}
           {tab === 'attendance' && <Attendance />}
@@ -98,6 +101,7 @@ export default function PortalPage() {
           {tab === 'payslips' && <Payslips />}
           {tab === 'ideas' && <IdeaBucket bare />}
           {tab === 'forms' && <TeamWebsiteForms forms={forms} />}
+          {tab === 'needs' && <NeedsYou admin={false} onCount={setNeeds} />}
           {tab === 'profile' && <Profile onPhoto={(photo) => setData((d) => ({ ...d, me: { ...d.me, photo } }))} />}
           {tab === 'accounts' && (
             <>

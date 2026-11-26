@@ -9,6 +9,8 @@ import { Campaign, Company, Contact, EmailLog, Enrollment, Reply, STAGE_RANK, Su
 import { bounceReason, buildEmail, sendMail, isBadAddress, parseCc, unsubscribeUrl } from './mail.js';
 import { FOLLOW_UPS, SIGNATURE, SIGNATURE_KEY } from './templates.js';
 import { joinNewsletter, runNewsletters } from './newsletter.js';
+import { askMeetingOutcomes, classifyReply, onReply, runScheduled, suggestMeeting } from './actions.js';
+import { syncCalendars, invitesIn } from './calendar.js';
 
 const DAY = 86400000;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -39,6 +41,7 @@ export function expectedSendAt(at) {
   return new Date(t);
 }
 /** older emails (follow-ups + first emails left from an earlier day) wait for PENDING_START_HOUR; today's upload does not */
+export const olderEmailsOpen = () => pendingOpen();
 const pendingOpen = (at = new Date()) => tzNow(at).h >= config.pendingStart || config.pendingStart <= config.windowStart;
 export function expectedPendingAt(at) {
   let t = expectedSendAt(at).getTime();
@@ -153,7 +156,8 @@ export const sentToday = () => EmailLog.countDocuments({ status: 'sent', sentAt:
 /* ---------------- contact state changes ---------------- */
 export const stopAll = (contactId, status) => Enrollment.updateMany({ contact: contactId, status: 'active' }, { $set: { status } });
 
-export async function markReplied(contact, { enrollment, from, subject, snippet, messageId, at = new Date() } = {}) {
+// pipeline: false = the reply is "not interested" / "later" / "out of office": the company does not move until a person decides
+export async function markReplied(contact, { enrollment, from, subject, snippet, messageId, at = new Date(), pipeline = true } = {}) {
   const enr = enrollment || (await Enrollment.findOne({ contact: contact._id, step: { $gt: 0 } }).sort({ lastSentAt: -1 }));
   if (enr && enr.status !== 'replied') {
     enr.status = 'replied';
@@ -162,18 +166,20 @@ export async function markReplied(contact, { enrollment, from, subject, snippet,
   }
   await stopAll(contact._id, 'replied');
   await Contact.updateOne({ _id: contact._id, status: { $nin: ['unsubscribed', 'bounced'] } }, { $set: { status: 'replied', repliedAt: at } });
+  let reply;
   try {
-    await Reply.create({ contact: contact._id, campaign: enr?.campaign, afterStep: enr?.step, from: from || contact.email, subject, snippet, messageId, receivedAt: at });
+    reply = await Reply.create({ contact: contact._id, campaign: enr?.campaign, afterStep: enr?.step, from: from || contact.email, subject, snippet, messageId, receivedAt: at });
   } catch (e) {
-    if (e?.code === 11000) return; // the same email was already saved (e.g. by another server) - no second copy, no second alert
+    if (e?.code === 11000) return null; // the same email was already saved (e.g. by another server) - no second copy, no second alert
     throw e;
   }
   await notify('replied', contact, { campaign: enr?.campaign, step: enr?.step, text: snippet || subject || '' });
-  await movePipeline(contact).catch((e) => console.error('[pipeline]', e.message));
+  if (pipeline) await movePipeline(contact).catch((e) => console.error('[pipeline]', e.message));
+  return reply;
 }
 
 /** A reply moves the company forward: first reply -> Hot lead, replies again (conversation going) -> Opportunity */
-async function movePipeline(contact) {
+export async function movePipeline(contact) {
   let companyId = contact.companyId;
   if (!companyId && contact.company) {
     const c = await upsertCompany(contact.company, {});
@@ -616,7 +622,16 @@ async function handleMessage(client, m) {
     return true;
   }
   const enrollment = log?.enrollment ? await Enrollment.findById(log.enrollment) : null;
-  await markReplied(contact, { enrollment, from, subject, snippet: newText(parsed.text), messageId: env.messageId, at });
+  // read what they wrote: "not interested" / "after March" / "on leave" wait for a person in Needs you; the rest is a normal reply
+  const verdict = classifyReply(said, at);
+  const reply = await markReplied(contact, { enrollment, from, subject, snippet: newText(parsed.text), messageId: env.messageId, at, pipeline: verdict.type === 'hot' });
+  if (reply) {
+    await onReply(contact, verdict, { reply, quote: said, at }).catch((e) => console.error('[needs-you]', e.message));
+    // a calendar invite in the email (Google Meet / Zoom / Teams): a meeting suggestion
+    for (const ev of invitesIn(parsed)) {
+      await suggestMeeting({ contact: await Contact.findById(contact._id).lean(), at: ev.start, source: 'invite', quote: ev.title || said, reply, calendarUid: ev.uid, cancelled: ev.cancelled }).catch((e) => console.error('[invite]', e.message));
+    }
+  }
   // someone else named, CC'd or replying for them -> that person joins the same company
   await saveReferrals(contact, referralCandidates(contact, { from, fromName: env.from?.[0]?.name, cc: env.cc || [], text: said }), { ccCheck: isCcAddress })
     .catch((e) => console.error('[referrals]', e.message));
@@ -793,6 +808,10 @@ export async function fillCompaniesFromSheets() {
 }
 
 export function startWorker() {
+  cron.schedule('*/5 * * * *', () => runScheduled().catch((e) => console.error('[scheduled]', e.message))); // planned follow-ups from Needs you
+  cron.schedule('*/15 * * * *', () => askMeetingOutcomes().catch((e) => console.error('[meetings]', e.message))); // "How was the meeting?"
+  cron.schedule('7,37 * * * *', () => syncCalendars().catch((e) => console.error('[calendar]', e.message))); // meetings from the calendars (CALENDAR_ICS_URLS)
+  setTimeout(() => syncCalendars().catch((e) => console.error('[calendar]', e.message)), 30000);
   setTimeout(async () => {
     try {
       if ((await getSetting('company_sheet_fill_v', 0)) < 1) {

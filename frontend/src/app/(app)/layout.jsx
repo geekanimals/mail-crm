@@ -4,7 +4,7 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
-import { LuBan, LuBell, LuBriefcase, LuCheck, LuFileUser, LuGlobe, LuHandshake, LuKanban, LuSparkles, LuLightbulb, LuNewspaper, LuLayoutDashboard, LuLogOut, LuMenu, LuReply, LuSend, LuSettings, LuTrendingUp, LuUserCog, LuUsers, LuX } from 'react-icons/lu';
+import { LuBan, LuBell, LuInbox, LuBriefcase, LuCheck, LuFileUser, LuGlobe, LuHandshake, LuKanban, LuSparkles, LuLightbulb, LuNewspaper, LuLayoutDashboard, LuLogOut, LuMenu, LuReply, LuSend, LuSettings, LuTrendingUp, LuUserCog, LuUsers, LuX } from 'react-icons/lu';
 import { api, campaignName, getToken, setRole, setToken } from '@/lib/api';
 
 const ICON = process.env.NEXT_PUBLIC_LOGO_ICON_URL || '/fav.png'; // square logo (always shown)
@@ -13,6 +13,7 @@ const WORDMARK = process.env.NEXT_PUBLIC_BRAND_LOGO_URL || '/logo.png'; // brand
 const FORM_PAGE = { client: '/website-leads', career: '/job-applications', creator: '/creators', vendor: '/partners' };
 const MENU = [
   ['/', 'Dashboard', LuLayoutDashboard],
+  ['/needs-you', 'Needs you', LuInbox], // the CRM's suggestions waiting for a decision
   ['/contacts', 'Contacts', LuUsers],
   ['/pipeline', 'Pipeline', LuKanban],
   ['/deals', 'Deals', LuBriefcase],
@@ -36,6 +37,7 @@ export default function AppLayout({ children }) {
   const [toast, setToast] = useState(null);
   const [unread, setUnread] = useState(0);
   const [formNew, setFormNew] = useState({}); // new website forms per page
+  const [needs, setNeeds] = useState(0); // Needs you: decisions waiting
   const [bellOpen, setBellOpen] = useState(false);
   const [notes, setNotes] = useState(null);
   const [noteCount, setNoteCount] = useState(0);
@@ -62,6 +64,7 @@ export default function AppLayout({ children }) {
     const refresh = () => {
       api('/api/settings').then((s) => setUnread(s.unhandled || 0)).catch(() => {});
       api('/api/notifications').then((n) => setNoteCount(n.unread || 0)).catch(() => {});
+      api('/api/actions/count').then((r) => setNeeds(r.open || 0)).catch(() => {});
       api('/api/website-leads/mine').then((r) => setFormNew(Object.fromEntries(r.forms.map((f) => [FORM_PAGE[f.key], f.fresh])))).catch(() => {});
     };
     refresh();
@@ -120,6 +123,7 @@ export default function AppLayout({ children }) {
       case 'sent': return { icon: LuSend, title: `${step(n.step)} sent to ${who}`, href: n.campaign ? `/campaigns?open=${n.campaign._id}` : '/campaigns' };
       case 'replied': return { icon: LuReply, title: `${who} replied`, href: '/replies', extra: 'Follow-ups stopped' };
       case 'unsubscribed': return { icon: LuBan, title: `${who} unsubscribed`, href: '/contacts', extra: 'Will never be emailed again' };
+      case 'action': return { icon: LuInbox, title: `${who}: needs your decision`, href: '/needs-you', extra: n.text || '' };
       case 'referral': return { icon: LuUsers, title: `${who} was brought in by a reply`, href: '/contacts', extra: 'Added to the same company' };
       case 'bounced': return { icon: LuX, title: `Email to ${who} bounced`, href: '/contacts?status=bounced', extra: n.text ? `Why: ${n.text}` : 'Address blocked' };
       case 'website': {
@@ -171,6 +175,7 @@ export default function AppLayout({ children }) {
               <span className="nav-label">{label}</span>
               {href === '/replies' && unread > 0 && <em className="nav-badge">{unread}</em>}
               {formNew[href] > 0 && <em className="nav-badge">{formNew[href]}</em>}
+              {href === '/needs-you' && needs > 0 && <em className="nav-badge">{needs}</em>}
             </Link>
           ))}
         </nav>

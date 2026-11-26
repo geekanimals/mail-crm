@@ -29,11 +29,11 @@ const LABEL = {
   shortlisted: 'Shortlisted', interview: 'Interview', hired: 'Hired', rejected: 'Rejected',
   onboarded: 'Onboarded', notfit: 'Not a fit', partnered: 'Partnered',
   // client forms follow the company's Pipeline stage
-  hot: 'Hot lead', opportunity: 'Opportunity', account: 'Account', old_client: 'Old client', cold: 'Cold (not now)',
+  hot: 'Hot lead', opportunity: 'Opportunity', account: 'Account', old_client: 'Old client', later: 'Future follow-up', not_interested: 'Not interested', cold: 'Cold',
 };
 export const LEAD_STATUSES = Object.keys(LABEL);
 const STATUS_BY_FORM = {
-  client: ['hot', 'opportunity', 'account', 'old_client', 'cold', 'spam'], // = Pipeline stage (spam: only here)
+  client: ['hot', 'opportunity', 'account', 'old_client', 'later', 'not_interested', 'cold', 'spam'], // = Pipeline stage (spam: only here)
   career: ['new', 'shortlisted', 'interview', 'hired', 'rejected', 'spam'],
   creator: ['new', 'shortlisted', 'onboarded', 'notfit', 'spam'],
   vendor: ['new', 'contacted', 'partnered', 'notfit', 'spam'],

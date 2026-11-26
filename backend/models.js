@@ -24,6 +24,10 @@ const contactSchema = new Schema(
     leadDate: { type: String, default: '' },
     referredBy: { type: String, default: '' }, // came as a referral from this person (same company)
     fromReply: { type: Boolean, default: false }, // added because someone named / CC'd them in a reply: never put in automatic emails
+    outcome: { type: String, enum: [null, 'later', 'not_interested', 'no_reply'], default: null }, // decided in Needs you
+    outcomeReason: { type: String, default: null },
+    outcomeAt: Date,
+    laterAt: Date, // future follow-up date
     source: { type: String, default: '' }, // which file / sheet it came from
     // every column from the uploaded sheet, exactly as it was (A to Z)
     fields: [{ _id: false, k: String, v: String }],
@@ -52,8 +56,9 @@ contactSchema.index({ email: 1 }, { unique: true, partialFilterExpression: { ema
 export const Contact = model('Contact', contactSchema);
 
 // A company / brand / account. stage = where it is in the pipeline.
-export const STAGES = ['cold', 'hot', 'opportunity', 'account', 'old_client'];
-export const STAGE_RANK = { cold: 0, hot: 1, opportunity: 2, account: 3, old_client: 3 };
+export const STAGES = ['cold', 'hot', 'opportunity', 'account', 'old_client', 'later', 'not_interested'];
+// later / not_interested sit beside the main flow: replies never pull them back to Hot on their own (a person decides)
+export const STAGE_RANK = { cold: 0, hot: 1, opportunity: 2, later: 2.5, not_interested: 2.5, account: 3, old_client: 3 };
 export const companyKey = (name) =>
   String(name || '').toLowerCase().replace(/&/g, ' and ').replace(/\b(pvt|private|ltd|limited|llp|inc|co)\b\.?/g, ' ').replace(/[^a-z0-9]+/g, ' ').trim();
 export const Company = model(
@@ -274,6 +279,7 @@ export const EmailLog = model(
     messageId: { type: String, index: true },
     trackingId: { type: String, index: true },
     status: { type: String, enum: ['sent', 'failed'], default: 'sent' },
+    kind: { type: String, default: null }, // a planned follow-up from Needs you: later | winback | after_meeting
     error: String,
     sentAt: { type: Date, default: () => new Date(), index: true },
     openedAt: Date,
@@ -305,7 +311,7 @@ export const setSetting = (key, value) => Setting.updateOne({ key }, { $set: { v
 
 // Activity feed for the bell: every email sent, reply, unsubscribe, bounce, failure (kept 60 days)
 const notificationSchema = new Schema({
-  type: { type: String, enum: ['sent', 'replied', 'unsubscribed', 'bounced', 'failed', 'website', 'referral'], required: true },
+  type: { type: String, enum: ['sent', 'replied', 'unsubscribed', 'bounced', 'failed', 'website', 'referral', 'action'], required: true },
   contact: { type: id, ref: 'Contact' },
   campaign: { type: id, ref: 'Campaign' },
   name: String, // person's name or email at the time

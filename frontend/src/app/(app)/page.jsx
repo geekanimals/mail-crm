@@ -13,6 +13,12 @@ export default function Dashboard() {
   const [days, setDays] = useState(7);
   const [d, setD] = useState(null);
   const [hover, setHover] = useState(null); // the day under the mouse (chart)
+  const [needs, setNeeds] = useState(null); // Needs you: { open, late, week }
+  useEffect(() => {
+    Promise.all([api('/api/actions/count'), api('/api/actions/scheduled')])
+      .then(([c, sch]) => setNeeds({ open: c.open, late: c.late, week: sch.thisWeek }))
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     api('/api/dashboard', { query: { days } }).then(setD).catch((e) => notify(e.message, 'error'));
@@ -37,6 +43,12 @@ export default function Dashboard() {
           </div>
           <Link href="/import" className="btn"><LuFileSpreadsheet /> Upload file & send</Link>
         </div>
+        {needs && (needs.open > 0 || needs.week > 0) && (
+          <Link href="/needs-you" className={`dash-needs ${needs.late ? 'late' : ''}`}>
+            <b>{needs.open > 0 ? `Needs your decision (${num(needs.open)})` : 'Nothing needs you'}</b>
+            <span>{needs.late ? `${num(needs.late)} waiting 2+ days · ` : ''}{num(needs.week)} planned follow-up{needs.week === 1 ? '' : 's'} going out this week</span>
+          </Link>
+        )}
         <div className="dash-stats">
           <Stat href="/contacts" icon={LuUsers} color="blue" label="Total Contacts" value={num(t.contacts)} note={`${num(t.active)} in a sequence now`} />
           <Stat href="/emails?show=sent" icon={LuSend} color="green" label="Emails Sent" value={num(t.sent)} note={`${num(t.todaySent)} / ${num(t.dailyLimit)} today`} />
@@ -223,6 +235,10 @@ function Stat({ href, icon: Icon, color, label, value, note }) {
 }
 
 const css = `
+.dash-needs { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; background: linear-gradient(135deg, #fff7ed, #fff); border: 1px solid #fed7aa; border-radius: 16px; padding: 12px 16px; margin-bottom: 14px; color: #9a3412; text-decoration: none; }
+.dash-needs b { font-size: 15px; } .dash-needs span { font-size: 13px; color: #7c2d12; }
+.dash-needs.late { border-color: #fecaca; background: linear-gradient(135deg, #fef2f2, #fff); color: #b91c1c; }
+.dash-needs:hover { box-shadow: 0 8px 20px rgba(234,88,12,.12); }
 .dash-welcome .page-title { margin-bottom: 18px; }
 .dash-welcome h1 { font-size: 30px; font-weight: 700; letter-spacing: -.03em; }
 .dash-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }

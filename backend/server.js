@@ -15,6 +15,7 @@ import portalRoutes from './routes/portal.js';
 import contactRoutes from './routes/contacts.js';
 import campaignRoutes from './routes/campaigns.js';
 import dashboardRoutes from './routes/dashboard.js';
+import actionRoutes from './routes/actions.js';
 import publicRoutes from './routes/public.js';
 import companyRoutes from './routes/companies.js';
 import hrRoutes from './routes/hr.js';
@@ -69,7 +70,8 @@ app.use('/api/portal', requireAuth, portalRoutes); // team members + clients
 app.use('/api/me', requireAuth, meRoutes); // employee portal (team members)
 app.use('/api/files', requireAuth, fileRoutes); // HR files: the admin, or the employee they belong to
 app.use('/api/ideas', requireAuth, ideaRoutes); // Idea Bucket: every login (who sees what is checked inside)
-app.use('/api/deals', requireAuth, dealRoutes); // client work after an account: admin + the employees on it
+app.use('/api/deals', requireAuth, dealRoutes);
+app.use('/api/actions', requireAuth, actionRoutes); // Needs you: admin all, employees their meeting questions (checked inside) // client work after an account: admin + the employees on it
 app.use('/api/insights', requireAuth, insightsRoutes); // Insights Dashboard: admin + Insights logins (checked inside)
 const admin = [requireAuth, requireAdmin]; // everything else: admin only
 app.use('/api/contacts', ...admin, contactRoutes);

@@ -271,6 +271,8 @@ body.emp-theme .wf { --a: #c27c4f; --a2: #dfa47a; --ad: #9a5a33; --soft: #f3dfcf
 .wf-stage.hot { background: #fff1e6; color: #c2410c; }
 .wf-stage.opportunity { background: #fef9c3; color: #a16207; }
 .wf-stage.account, .wf-stage.old_client { background: #dcfce7; color: #15803d; }
+.wf-stage.later { background: #e0f2fe; color: #0369a1; }
+.wf-stage.not_interested { background: #fee2e2; color: #b91c1c; }
 .wf-status { font-size: 12px; font-weight: 700; padding: 3px 10px; border-radius: 99px; background: #f1f5f9; color: #475569; }
 .wf-status.new { background: #e0f2fe; color: #0369a1; }
 .wf-status.contacted, .wf-status.shortlisted { background: #fef3c7; color: #a16207; }

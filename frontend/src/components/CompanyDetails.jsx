@@ -11,7 +11,7 @@ import { openFile, uploadFile } from '@/lib/hr';
 // sheet columns about the person (shown on their own tab), not the company
 const PERSON_COL = /^(dm[\s_]|email[\s_]|e-?mail$|name$|first[\s_]?name|last[\s_]?name|phone$|designation$)/i;
 
-export const STAGES = [['cold', 'Cold lead'], ['hot', 'Hot lead'], ['opportunity', 'Opportunity'], ['account', 'Account'], ['old_client', 'Old client']];
+export const STAGES = [['cold', 'Cold lead'], ['hot', 'Hot lead'], ['opportunity', 'Opportunity'], ['account', 'Account'], ['old_client', 'Old client'], ['later', 'Future follow-up'], ['not_interested', 'Not interested']];
 export const STAGE = Object.fromEntries(STAGES);
 const INFO = [['website', 'Website'], ['industry', 'Industry'], ['location', 'Location'], ['linkedin', 'Company LinkedIn']];
 const HINT = { website: 'https://brand.com', linkedin: 'linkedin.com/company/…' };
@@ -490,6 +490,8 @@ export const plCss = `
 .pl-stage.s-hot { background: #fff1e6; color: #c2410c; }
 .pl-stage.s-opportunity { background: #fef9c3; color: #a16207; }
 .pl-stage.s-account { background: #dcfce7; color: #15803d; }
+.pl-stage.s-later, .stage.later { background: #e0f2fe; color: #0369a1; }
+.pl-stage.s-not_interested, .stage.not_interested { background: #fee2e2; color: #b91c1c; }
 .stage { display: inline-flex; font-size: 11.5px; font-weight: 600; padding: 2px 9px; border-radius: 99px; background: #f1f5f9; color: #475569; }
 .stage.cold { background: #eef2ff; color: #4f46e5; }
 .stage.hot { background: #fff1e6; color: #c2410c; }

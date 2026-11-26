@@ -14,6 +14,12 @@ export default function RepliesPage() {
   const latest = useRef(0);
   const [list, setList] = useState(null);
   const [checking, setChecking] = useState(false);
+  const [needs, setNeeds] = useState({}); // reply id -> what the CRM suggests (waiting in Needs you)
+  useEffect(() => {
+    api('/api/actions')
+      .then((r) => setNeeds(Object.fromEntries(r.items.filter((a) => a.kind === 'reply' && a.reply?._id).map((a) => [a.reply._id, a.suggestion?.type]))))
+      .catch(() => {});
+  }, [list]);
 
   const load = useCallback(
     () => {
@@ -96,6 +102,7 @@ export default function RepliesPage() {
                   {r.contact?.companyId && <span className={`rp-stage ${r.contact.companyId.stage}`}>{STAGE[r.contact.companyId.stage]}</span>}
                   {r.campaign && <span className="badge active">{campaignName(r.campaign.name)}</span>}
                   {r.afterStep ? <span className="badge replied">after {stepName(r.afterStep)}</span> : null}
+                  {needs[r._id] && <Link href="/needs-you" className="rp-needs">Needs you: {{ later: 'Future follow-up?', not_interested: 'Not interested?', ooo: 'Out of office?' }[needs[r._id]] || 'decide'}</Link>}
                 </div>
                 {r.subject && <p className="rp-subject">{r.subject}</p>}
                 {r.snippet && <p className="rp-text">{r.snippet}</p>}
@@ -139,4 +146,5 @@ const css = `
   .rp-actions { flex-direction: row; }
   .rp-actions .btn { flex: 1; }
 }
+.rp-needs { font-size: 11.5px; font-weight: 700; color: #c2410c; background: #ffedd5; border-radius: 99px; padding: 2px 9px; text-decoration: none; }
 `;

@@ -36,7 +36,9 @@ export const notify = (text, type = 'ok') => window.dispatchEvent(new CustomEven
 
 export const num = (n) => new Intl.NumberFormat('en-IN').format(n || 0);
 export const date = (d) => (d ? new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—');
-export const stepName = (n) => (n <= 1 ? 'First email' : `Follow-up ${n - 1}`);
+const KIND_NAME = { later: 'Future follow-up', winback: 'Win-back email', after_meeting: 'Follow-up after the meeting' };
+/** 1 = first email, 2 = follow-up 1 ...; kind = a planned follow-up from Needs you */
+export const stepName = (n, kind) => (kind ? KIND_NAME[kind] || 'Follow-up' : !n ? 'Email' : n <= 1 ? 'First email' : `Follow-up ${n - 1}`);
 /** the one page for a lead: its company with every person on it (jumps to this person), or the person alone */
 /** the lead page link; tab: 'emails' | 'replies' | 'sheet' opens that person on that tab */
 export const leadHref = (c, tab) => {
