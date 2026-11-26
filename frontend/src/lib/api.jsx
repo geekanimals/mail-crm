@@ -37,6 +37,11 @@ export const notify = (text, type = 'ok') => window.dispatchEvent(new CustomEven
 export const num = (n) => new Intl.NumberFormat('en-IN').format(n || 0);
 export const date = (d) => (d ? new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—');
 export const stepName = (n) => (n <= 1 ? 'First email' : `Follow-up ${n - 1}`);
+/** the one page for a lead: its company with every person on it (jumps to this person), or the person alone */
+export const leadHref = (c) => {
+  const cid = c?.companyId?._id || c?.companyId;
+  return cid ? `/lead?company=${cid}${c?._id ? `&person=${c._id}` : ''}` : `/lead?person=${c?._id || c}`;
+};
 /** a campaign / upload name shown the same way everywhere: "GeekCreative leads 2026-11-26" -> "GeekCreative leads · 26 Nov 2026" */
 export const campaignName = (n) =>
   String(n || '').replace(/\s*(\d{4})-(\d{2})-(\d{2})\b/, (_m, y, mo, d) => ` · ${new Date(`${y}-${mo}-${d}T12:00:00`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}`);

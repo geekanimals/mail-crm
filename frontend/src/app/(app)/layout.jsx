@@ -145,7 +145,7 @@ export default function AppLayout({ children }) {
 
   if (!user) return <div className="loading"><style>{css}</style><span className="spinner" /></div>;
 
-  const isActive = (href) => (href === '/' ? path === '/' || path.startsWith('/campaigns') || path.startsWith('/emails') : path.startsWith(href)); // campaigns open from the dashboard
+  const isActive = (href) => (href === '/' ? path === '/' || path.startsWith('/campaigns') || path.startsWith('/emails') : path.startsWith(href) || (href === '/pipeline' && path.startsWith('/lead'))); // campaigns open from the dashboard; a lead page belongs to Pipeline
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
   const today = new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' });

@@ -203,7 +203,7 @@ export default function WebsiteForms({ form, title, intro, bare = false }) {
                             {d.statuses.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
                           </select>
                         </label>
-                        {l.form === 'client' && d.isAdmin && <a className="wf-btn ghost" href="/pipeline">{l.status === 'opportunity' ? 'Convert to account in Pipeline' : 'Open Pipeline'}</a>}
+                        {l.form === 'client' && d.isAdmin && l.companyId && <a className="wf-btn ghost" href={`/lead?company=${l.companyId}${l.status === 'opportunity' ? '&convert=1' : ''}`}>{l.status === 'opportunity' ? 'Convert to account' : 'Open the lead page'}</a>}
                         {d.isAdmin && <button type="button" className="wf-btn red" onClick={() => remove(l)}><LuTrash2 /> Delete</button>}
                       </div>
 

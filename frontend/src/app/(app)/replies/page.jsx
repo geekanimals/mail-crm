@@ -3,7 +3,8 @@
 // they do NOT stop follow-ups and do NOT move the company in the pipeline.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { LuCheck, LuRefreshCw, LuReply } from 'react-icons/lu';
-import { api, campaignName, date, notify, stepName } from '@/lib/api';
+import Link from 'next/link';
+import { api, campaignName, date, leadHref, notify, stepName } from '@/lib/api';
 
 const STAGE = { cold: 'Cold lead', hot: 'Hot lead', opportunity: 'Opportunity', account: 'Account', old_client: 'Old client' };
 
@@ -84,7 +85,7 @@ export default function RepliesPage() {
             <div key={r._id} className={`rp-item ${r.handled ? 'done' : ''}`}>
               <div className="rp-main">
                 <div className="row rp-top">
-                  <b>{r.contact?.name || r.from}</b>
+                  {r.contact ? <Link href={leadHref(r.contact)} className="rp-who"><b>{r.contact.name || r.from}</b></Link> : <b>{r.from}</b>}
                   <span className="small muted">{r.from} · {date(r.receivedAt)}</span>
                 </div>
                 {(r.contact?.title || r.contact?.companyId || r.contact?.company) && (
@@ -112,6 +113,8 @@ export default function RepliesPage() {
 }
 
 const css = `
+.rp-who { color: inherit; text-decoration: none; }
+.rp-who:hover b { color: var(--c-700); text-decoration: underline; }
 .rp-filter { display: inline-flex; align-items: center; gap: 8px; margin: 4px 0 10px; padding: 6px 8px 6px 12px; border-radius: 99px; background: var(--c-50, #f0fbfe); border: 1px solid var(--c-100); font-size: 13px; color: #475569; }
 .rp-filter button { border: 0; background: none; font-size: 17px; line-height: 1; cursor: pointer; color: #64748b; padding: 0 4px; }
 .rp-filter button:hover { color: #e11d48; }
