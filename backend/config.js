@@ -21,6 +21,15 @@ export const config = {
   // Insights login (opens only the Insights Dashboard). Leave empty to turn it off.
   insightsUser: str('INSIGHTS_USERNAME'),
   insightsPass: process.env.INSIGHTS_PASSWORD || '',
+  // Insights auto-fetch from Meta (the "Bounty and Threads" Meta app). Leave empty to turn it off.
+  meta: {
+    appId: str('META_APP_ID'), // Facebook app ID
+    appSecret: process.env.META_APP_SECRET || '',
+    loginConfigId: str('META_LOGIN_CONFIG_ID'), // Facebook Login for Business configuration with the Page insight permissions
+    igAppId: str('META_IG_APP_ID'), // Instagram app ID (Instagram login)
+    igAppSecret: process.env.META_IG_APP_SECRET || '',
+    graphVersion: str('META_GRAPH_VERSION', 'v21.0'),
+  },
   jwtExpires: str('JWT_EXPIRES_IN', '12h'),
 
   smtp: { host: str('SMTP_HOST'), port: num('SMTP_PORT', 465), secure: bool('SMTP_SECURE', true), user: str('SMTP_USER'), pass: str('SMTP_PASS') },

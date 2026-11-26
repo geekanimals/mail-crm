@@ -36,6 +36,14 @@ export const api = {
   addAccount: (name) => request("/accounts", json("POST", { name })),
 
   // files + { account, platform, week, end } → numbers to review (nothing is saved)
+  // Facebook / Instagram connections (weekly auto-fetch from Meta)
+  metaStatus: () => request("/meta/status"),
+  metaConnect: (account, platform) => request("/meta/connect", json("POST", { account, platform })).then((d) => d.url),
+  metaPending: (id) => request(`/meta/pending/${id}`),
+  metaChoosePage: (id, pageId) => request(`/meta/pending/${id}`, json("POST", { pageId })),
+  metaSync: (body) => request("/meta/sync", json("POST", body)),
+  metaDisconnect: (id) => request(`/meta/connections/${id}`, { method: "DELETE" }),
+
   preview: (files, fields) => {
     const form = new FormData();
     files.forEach((f) => form.append("files", f));

@@ -1,0 +1,29 @@
+// History of automatic / manual fetches from Meta (shown on the Connections page)
+import mongoose from "mongoose";
+import { db } from "../db.js";
+
+const syncLogSchema = new mongoose.Schema(
+  {
+    account: String,
+    platform: String,
+    week: String,
+    end: String,
+    ok: Boolean,
+    message: String, // what was saved, or the error in plain words
+    trigger: { type: String, enum: ["auto", "manual"], default: "auto" },
+  },
+  { timestamps: true }
+);
+
+syncLogSchema.index({ createdAt: -1 });
+
+syncLogSchema.set("toJSON", {
+  versionKey: false,
+  transform: (_doc, ret) => {
+    ret.id = String(ret._id);
+    delete ret._id;
+    return ret;
+  },
+});
+
+export const SyncLog = db.model("SyncLog", syncLogSchema);

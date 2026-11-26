@@ -7,6 +7,7 @@ import Link from "next/link";
 import { LuMenu, LuUpload } from "react-icons/lu";
 import Sidebar from "./Sidebar";
 import ServerStatus from "./ServerStatus";
+import MetaAlert from "./MetaAlert";
 import { useSession } from "./Session";
 import { useScreen } from "@/lib/insights/useScreen";
 
@@ -72,6 +73,7 @@ export default function AppShell({ children }) {
 
         <main style={{ ...s.content, ...(mobile ? s.contentMobile : compact ? s.contentTablet : {}) }}>
           <ServerStatus />
+          <MetaAlert />
           {children}
         </main>
       </div>

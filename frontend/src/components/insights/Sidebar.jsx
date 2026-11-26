@@ -5,7 +5,7 @@
 // Desktop: icons only, opens on hover. Tablet / mobile: slide-out menu (open = true).
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { LuArrowLeft, LuArrowLeftRight, LuChartColumn, LuLayoutDashboard, LuLightbulb, LuLogOut, LuTable, LuTrendingUp, LuUpload, LuX } from "react-icons/lu";
+import { LuArrowLeft, LuArrowLeftRight, LuChartColumn, LuLayoutDashboard, LuLightbulb, LuLogOut, LuPlug, LuTable, LuTrendingUp, LuUpload, LuX } from "react-icons/lu";
 import { setRole, setToken } from "@/lib/api";
 import { useSession } from "./Session";
 
@@ -18,6 +18,7 @@ const LINKS = [
   { href: "/insights/compare", label: "Compare", Icon: LuArrowLeftRight },
   { href: "/insights/upload", label: "Upload Data", Icon: LuUpload },
   { href: "/insights/data", label: "All Data", Icon: LuTable },
+  { href: "/insights/connections", label: "Connections", Icon: LuPlug },
   { href: "/insights/ideas", label: "Idea Bucket", Icon: LuLightbulb },
 ];
 

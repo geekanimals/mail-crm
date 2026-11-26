@@ -25,7 +25,7 @@ import dealRoutes from './routes/deals.js';
 import ideaRoutes from './routes/ideas.js';
 import newsletterRoutes from './routes/newsletter.js';
 import { admin as websiteLeadRoutes, hook as websiteLeadHook } from './routes/website-leads.js';
-import insightsRoutes, { ensureDefaultAccounts } from './insights/index.js';
+import insightsRoutes, { ensureDefaultAccounts, insightsOAuthRoutes, startMetaTimer } from './insights/index.js';
 import { Company, Contact, Notification, Reply, getSetting, setSetting } from './models.js';
 
 checkConfig();
@@ -71,6 +71,7 @@ app.use('/api/files', requireAuth, fileRoutes); // HR files: the admin, or the e
 app.use('/api/ideas', requireAuth, ideaRoutes); // Idea Bucket: every login (who sees what is checked inside)
 app.use('/api/deals', requireAuth, dealRoutes);
 app.use('/api/actions', requireAuth, actionRoutes); // Needs you: admin all, employees their meeting questions (checked inside) // client work after an account: admin + the employees on it
+app.use('/api/insights-oauth', insightsOAuthRoutes); // public: Meta sends people back here after Facebook / Instagram login
 app.use('/api/insights', requireAuth, insightsRoutes); // Insights Dashboard: admin + Insights logins (checked inside)
 const admin = [requireAuth, requireAdmin]; // everything else: admin only
 app.use('/api/contacts', ...admin, contactRoutes);
@@ -160,6 +161,7 @@ mongoose
     await migrate();
     console.log(`[startup] all steps: ${((Date.now() - t0) / 1000).toFixed(1)}s`);
     startWorker(); // sending / inbox start after the fixes, as before
+    startMetaTimer(); // Insights: weekly Facebook / Instagram auto-fetch
   })
   .catch((e) => {
     console.error('[db] connection failed:', e.message);
