@@ -3,7 +3,7 @@ import { Router } from 'express';
 import { config, imapReady, smtpReady } from '../config.js';
 import { Campaign, Contact, EmailLog, Enrollment, Notification, Reply, Suppression, getSetting, setSetting } from '../models.js';
 import { parseCc, sendMail, verifySmtp } from '../mail.js';
-import { checkReplies, globalCc, newText, inSendWindow, sentLastHour, runQueue, sentToday, startOfToday, status } from '../worker.js';
+import { applyFollowUpGap, checkReplies, globalCc, newText, inSendWindow, sentLastHour, runQueue, sentToday, startOfToday, status } from '../worker.js';
 import { campaignStats } from './campaigns.js';
 import { ah, checkId, fail, pct, validEmail } from '../utils.js';
 
@@ -162,6 +162,8 @@ router.get(
         window: `${config.windowStart}:00 - ${config.windowEnd}:00 (${config.timezone})`,
         openNow: inSendWindow(),
         sequence: `every ${config.intervalDays} ${config.skipWeekends ? 'working ' : ''}days`,
+        gapDays: config.intervalDays,
+        workingDays: config.skipWeekends,
         weekends: config.skipWeekends ? 'Saturday & Sunday off' : 'Sends every day',
       },
       cc: await globalCc(),
@@ -191,6 +193,16 @@ router.post(
     res.json({ cc: await globalCc() });
   })
 );
+// working days between follow-ups: the default, every running campaign and the next follow-up already planned
+router.put(
+  '/settings/follow-up-gap',
+  ah(async (req, res) => {
+    const days = Math.floor(Number(req.body?.days));
+    if (!(days >= 1 && days <= 30)) throw fail(400, 'Choose between 1 and 30 working days');
+    res.json({ days, preview: req.query.preview === '1', ...(await applyFollowUpGap(days, { preview: req.query.preview === '1' })) });
+  })
+);
+
 router.post('/settings/test-smtp', ah(async (_req, res) => res.json(await verifySmtp())));
 router.post(
   '/settings/test-email',

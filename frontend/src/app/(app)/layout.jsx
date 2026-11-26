@@ -121,6 +121,7 @@ export default function AppLayout({ children }) {
       case 'sent': return { icon: LuSend, title: `${step(n.step)} sent to ${who}`, href: n.campaign ? `/campaigns?open=${n.campaign._id}` : '/campaigns' };
       case 'replied': return { icon: LuReply, title: `${who} replied`, href: '/replies', extra: 'Follow-ups stopped' };
       case 'unsubscribed': return { icon: LuBan, title: `${who} unsubscribed`, href: '/contacts', extra: 'Will never be emailed again' };
+      case 'referral': return { icon: LuUsers, title: `${who} was brought in by a reply`, href: '/contacts', extra: 'Added to the same company' };
       case 'bounced': return { icon: LuX, title: `Email to ${who} bounced`, href: '/contacts?status=bounced', extra: n.text ? `Why: ${n.text}` : 'Address blocked' };
       case 'website': {
         const page = /career/i.test(n.text || '') ? '/job-applications' : /creator/i.test(n.text || '') ? '/creators' : /partner/i.test(n.text || '') ? '/partners' : '/website-leads';

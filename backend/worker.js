@@ -216,7 +216,7 @@ async function markBounced(contact, why = null) {
 
 /* ---------------- add contacts to a campaign ---------------- */
 export async function enroll(campaign, { contactIds, batch, onlyNew = true } = {}) {
-  const filter = { status: onlyNew ? 'new' : { $in: ['new', 'contacted'] }, email: { $type: 'string' } };
+  const filter = { status: onlyNew ? 'new' : { $in: ['new', 'contacted'] }, email: { $type: 'string' }, fromReply: { $ne: true } }; // people named in a reply are a warm handover, never auto-emailed
   if (contactIds?.length) filter._id = { $in: contactIds };
   if (batch) filter.batch = batch;
   // a campaign without its own first email (made from a file) can only start people whose file row had one
@@ -572,6 +572,9 @@ async function handleMessage(client, m) {
   }
   const enrollment = log?.enrollment ? await Enrollment.findById(log.enrollment) : null;
   await markReplied(contact, { enrollment, from, subject, snippet: newText(parsed.text), messageId: env.messageId, at });
+  // someone else named, CC'd or replying for them -> that person joins the same company
+  await saveReferrals(contact, referralCandidates(contact, { from, fromName: env.from?.[0]?.name, cc: env.cc || [], text: said }), { ccCheck: isCcAddress })
+    .catch((e) => console.error('[referrals]', e.message));
   return true;
 }
 
@@ -630,6 +633,98 @@ export async function fillBounceReasons({ redo = false } = {}) {
   }
   console.log(`[bounces] reasons found for ${filled} bounced contact(s)${left.size ? `, ${left.size} without a bounce email` : ''}`);
   return { filled, left: left.size };
+}
+
+/* ---------------- referrals: people named in a reply join the same company ---------------- */
+const GENERIC = /^(no-?reply|do-?not-?reply|mailer-daemon|postmaster|notifications?|bounce|calendar|reply)$/i;
+// a shared inbox or a ticket / help-desk system is not a person to work with
+const SHARED = /^(support|care|customer\.?care|help|helpdesk|team|info|hello|contact|sales|seo|admin|office|hr|marketing\d*|design\d*|enquir(y|ies)|connect|feedback)/i;
+const HELPDESK = /(freshdesk|zendesk|limechat|intercom|hubspot|helpscout|freshworks|zohodesk|kayako|gorgias)\.|(^|\.)mg\./i;
+const nameFromEmail = (e) => {
+  const local = e.split('@')[0];
+  if (/^(support|info|hello|contact|sales|marketing|team|admin|office|hr|care)$/i.test(local)) return '';
+  return local.split(/[._-]+/).map((w) => w.replace(/\d+$/, '')).filter((w) => /^[a-z]+$/i.test(w)).map((w) => w[0].toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+};
+/** the reply without the sender's signature (their own other addresses live there, e.g. "E. marketing2@brand.com") */
+const withoutSignature = (text = '') => {
+  const lines = String(text).replace(/\r/g, '').split('\n');
+  const i = lines.findIndex((l, n) => n > 0 && /^\s*(thanks|thank you|regards|regds|best|warm regards|kind regards|cheers|sincerely|--\s*$)/i.test(l));
+  return (i > 0 ? lines.slice(0, i) : lines).join('\n');
+};
+/** who else this reply brings in: whoever replied for them, people CC'd, and addresses written in the reply */
+export function referralCandidates(contact, { from = '', fromName = '', cc = [], text = '' } = {}) {
+  const own = [config.fromEmail, config.imap.user].map((e) => String(e || '').toLowerCase().split('@')[1]).filter(Boolean);
+  const me = String(contact.email || '').toLowerCase();
+  const out = new Map();
+  const add = (email, name, how) => {
+    const e = String(email || '').trim().toLowerCase().replace(/^mailto:/, '');
+    if (!/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/.test(e) || e === me || out.has(e)) return;
+    const [local, domain] = e.split('@');
+    if (own.includes(domain) || GENERIC.test(local) || SHARED.test(local) || HELPDESK.test(domain)) return;
+    // the same person on another address (their first name is in it, e.g. garima -> imgarimasingh41@gmail.com)
+    const first = String(contact.name || '').trim().split(/\s+/)[0].toLowerCase();
+    if (first.length >= 3 && local.toLowerCase().includes(first)) return;
+    out.set(e, { email: e, name: String(name || '').replace(/["']/g, '').trim() || nameFromEmail(e), how });
+  };
+  if (from) add(from, fromName, 'replied for them');
+  for (const c of cc) add(c?.address || c, c?.name, 'copied into their reply');
+  for (const e of withoutSignature(text).match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi) || []) add(e, '', 'named in their reply');
+  return [...out.values()];
+}
+/** add them to the referrer's company (or link an existing contact to it); never put in automatic emails */
+export async function saveReferrals(contact, people, { ccCheck } = {}) {
+  let added = 0;
+  for (const p of people) {
+    if (ccCheck && (await ccCheck(p.email))) continue; // our own CC people
+    const by = `${contact.name || contact.email} (${p.how})`;
+    const existing = await Contact.findOne({ email: p.email });
+    if (existing) {
+      const set = {};
+      if (!existing.companyId && contact.companyId) Object.assign(set, { companyId: contact.companyId, company: contact.company || existing.company });
+      if (!existing.referredBy) set.referredBy = by;
+      if (Object.keys(set).length) await Contact.updateOne({ _id: existing._id }, { $set: set });
+      continue;
+    }
+    const c = await Contact.create({
+      email: p.email, name: p.name, company: contact.company || '', companyId: contact.companyId || undefined,
+      referredBy: by, source: 'Referral (from a reply)', fromReply: true, status: 'new',
+    });
+    await notify('referral', c, { text: `${contact.name || contact.email} brought in ${p.name || p.email}${contact.company ? ` · ${contact.company}` : ''}` }).catch(() => {});
+    added++;
+  }
+  return added;
+}
+
+/* ---------------- follow-up gap from Settings ---------------- */
+/** change the working days between follow-ups everywhere: the default, every running campaign, and the next follow-up
+ *  already scheduled for each person (people with their own gap keep it; first emails still waiting are not moved) */
+export async function applyFollowUpGap(days, { preview = false } = {}) {
+  const running = { status: { $in: ['draft', 'active', 'paused'] } };
+  const campaigns = await Campaign.find(running).select('_id followUps').lean();
+  if (!preview) {
+    config.intervalDays = days;
+    await setSetting('intervalDays', days);
+    await Campaign.updateMany(running, { $set: { gapDays: days } });
+    for (const c of campaigns.filter((x) => x.followUps?.length)) {
+      await Campaign.updateOne({ _id: c._id }, { $set: { followUps: c.followUps.map((f) => ({ ...f, delayDays: days })) } });
+    }
+  }
+  const now = new Date();
+  let moved = 0;
+  const enrs = await Enrollment.find({ campaign: { $in: campaigns.map((c) => c._id) }, status: 'active', step: { $gte: 1 }, lastSentAt: { $exists: true }, $or: [{ gapDays: null }, { gapDays: { $exists: false } }] }).select('lastSentAt nextSendAt').lean();
+  for (const e of enrs) {
+    let next = addWorkingDays(e.lastSentAt, days);
+    const cur = e.nextSendAt ? new Date(e.nextSendAt) : null;
+    if (next <= now) {
+      if (cur && cur <= now) continue; // already due and waiting in the queue: keep its place
+      next = now; // a shorter gap makes it due now
+    }
+    if (!cur || Math.abs(cur - next) > 60000) {
+      if (!preview) await Enrollment.updateOne({ _id: e._id, status: 'active' }, { $set: { nextSendAt: next } });
+      moved++;
+    }
+  }
+  return { campaigns: campaigns.length, rescheduled: moved, ownGap: await Enrollment.countDocuments({ status: 'active', gapDays: { $gte: 1 } }) };
 }
 
 export function startWorker() {

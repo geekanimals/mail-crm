@@ -23,6 +23,7 @@ const contactSchema = new Schema(
     notes: { type: String, default: '' }, // remarks
     leadDate: { type: String, default: '' },
     referredBy: { type: String, default: '' }, // came as a referral from this person (same company)
+    fromReply: { type: Boolean, default: false }, // added because someone named / CC'd them in a reply: never put in automatic emails
     source: { type: String, default: '' }, // which file / sheet it came from
     // every column from the uploaded sheet, exactly as it was (A to Z)
     fields: [{ _id: false, k: String, v: String }],
@@ -270,7 +271,7 @@ export const setSetting = (key, value) => Setting.updateOne({ key }, { $set: { v
 
 // Activity feed for the bell: every email sent, reply, unsubscribe, bounce, failure (kept 60 days)
 const notificationSchema = new Schema({
-  type: { type: String, enum: ['sent', 'replied', 'unsubscribed', 'bounced', 'failed', 'website'], required: true },
+  type: { type: String, enum: ['sent', 'replied', 'unsubscribed', 'bounced', 'failed', 'website', 'referral'], required: true },
   contact: { type: id, ref: 'Contact' },
   campaign: { type: id, ref: 'Campaign' },
   name: String, // person's name or email at the time

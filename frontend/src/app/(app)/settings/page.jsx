@@ -9,6 +9,9 @@ export default function SettingsPage() {
   const [to, setTo] = useState('');
   const [cc, setCc] = useState('');
   const [templates, setTemplates] = useState([]);
+  const [gap, setGap] = useState(''); // follow-up gap being changed
+  const [gapPlan, setGapPlan] = useState(null); // preview: what the change would move
+  const [gapBusy, setGapBusy] = useState(false);
 
   const load = useCallback(
     () =>
@@ -25,6 +28,29 @@ export default function SettingsPage() {
     api('/api/campaigns/defaults').then((d) => setTemplates(d.followUps || [])).catch(() => {});
   }, [load]);
 
+  // follow-up gap: first a preview of what changes, then save
+  const previewGap = async () => {
+    const days = Number(gap);
+    if (!(days >= 1 && days <= 30) || days === s.rules.gapDays) return;
+    try {
+      setGapPlan({ days, ...(await api('/api/settings/follow-up-gap?preview=1', { method: 'PUT', body: { days } })) });
+    } catch (e) {
+      notify(e.message, 'error');
+    }
+  };
+  const saveGap = async () => {
+    setGapBusy(true);
+    try {
+      const r = await api('/api/settings/follow-up-gap', { method: 'PUT', body: { days: gapPlan.days } });
+      notify(`Follow-ups now every ${r.days} working day${r.days === 1 ? '' : 's'} · ${r.campaigns} campaigns · ${r.rescheduled} next follow-ups moved`);
+      setGapPlan(null);
+      setGap('');
+      load();
+    } catch (e) {
+      notify(e.message, 'error');
+    }
+    setGapBusy(false);
+  };
   const call = async (path, body, okMsg) => {
     try {
       const r = await api(path, { method: 'POST', body });
@@ -88,7 +114,30 @@ export default function SettingsPage() {
           <p><span>Hourly limit</span>{s.rules.sentLastHour} / {s.rules.hourlyLimit} sent in the last hour</p>
           <p><span>Gap between emails</span>{s.rules.delay} sec</p>
           <p><span>Sending hours</span>{s.rules.window} {s.rules.openNow ? '· open now' : '· closed now'}</p>
-          <p><span>Default follow-ups</span>{s.rules.sequence}</p>
+          <div className="st-gap">
+            <p><span>Follow-ups</span>{s.rules.sequence}</p>
+            <div className="st-gaprow">
+              <label>Change to every
+                <input type="number" min={1} max={30} placeholder={String(s.rules.gapDays)} value={gap} onChange={(e) => { setGap(e.target.value); setGapPlan(null); }} />
+                {s.rules.workingDays ? 'working days' : 'days'}
+              </label>
+              <button className="btn soft sm" disabled={!gap || Number(gap) === s.rules.gapDays || Number(gap) < 1 || Number(gap) > 30} onClick={previewGap}>Check what changes</button>
+            </div>
+            {gapPlan && (
+              <div className="st-gapplan">
+                <b>From {s.rules.gapDays} to {gapPlan.days} {s.rules.workingDays ? 'working ' : ''}days:</b>
+                <span>New uploads use {gapPlan.days} days.</span>
+                <span>{gapPlan.campaigns} running campaign{gapPlan.campaigns === 1 ? '' : 's'} change to {gapPlan.days} days.</span>
+                <span>{gapPlan.rescheduled} next follow-up{gapPlan.rescheduled === 1 ? '' : 's'} already planned move to {gapPlan.days} working days after the last email{gapPlan.rescheduled ? '' : ' (none to move)'}.</span>
+                {gapPlan.ownGap > 0 && <span>{gapPlan.ownGap} people with their own days keep them.</span>}
+                <span className="muted">First emails still waiting are not moved.</span>
+                <div className="row">
+                  <button className="btn sm" disabled={gapBusy} onClick={saveGap}>{gapBusy ? 'Saving…' : `Yes, change to ${gapPlan.days} days`}</button>
+                  <button className="btn ghost sm" onClick={() => setGapPlan(null)}>Cancel</button>
+                </div>
+              </div>
+            )}
+          </div>
           <p><span>Weekends</span>{s.rules.weekends}</p>
           <p><span>Last run</span>{s.lastRun ? `${date(s.lastRun)} · ${s.lastResult?.reason || `sent ${s.lastResult?.sent || 0}`}` : '—'}</p>
           <button className="btn ghost sm" onClick={() => call('/api/settings/run', {}, (r) => r.reason ? `Nothing sent: ${r.reason}` : `Sent ${r.sent}`)}><LuSend /> Run send queue now</button>
@@ -139,6 +188,12 @@ export default function SettingsPage() {
 }
 
 const css = `
+.st-gap { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; padding: 10px 12px; border-radius: 14px; background: var(--c-50, #f0fbfe); border: 1px solid var(--c-100); }
+.st-gap > p { margin-bottom: 0 !important; }
+.st-gaprow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.st-gaprow label { display: inline-flex; align-items: center; gap: 8px; font-size: 13.5px; font-weight: 600; color: #475569; }
+.st-gaprow input { width: 70px; }
+.st-gapplan { display: flex; flex-direction: column; gap: 4px; font-size: 13px; padding: 10px 12px; border-radius: 12px; background: #fff; border: 1px solid var(--c-100); }
 .st-pause { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; }
 .st-pause h2::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #16a34a; margin-right: 10px; vertical-align: 2px; box-shadow: 0 0 0 4px rgba(22,163,74,.15); }
 .st-pause.off h2::before { background: #f59e0b; box-shadow: 0 0 0 4px rgba(245,158,11,.18); }
