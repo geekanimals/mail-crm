@@ -77,7 +77,7 @@ export const Company = model(
       fields: [{ _id: false, k: String, v: String }], // original sheet row
       // the checklist ticked when it was converted to an account (GST certificate, campaign brief, estimate, WhatsApp group...)
       onboarding: {
-        items: [{ _id: false, label: String, done: Boolean, file: { _id: false, id: String, name: String } }],
+        items: [{ _id: false, label: String, done: Boolean, amount: Number, file: { _id: false, id: String, name: String } }],
         at: Date,
         by: String,
       },

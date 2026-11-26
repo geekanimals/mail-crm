@@ -1,6 +1,7 @@
 'use client';
 // One deal (client project after it became an account): progress, the current step's form, documents, payments,
 // deliverables, posts and the timeline. Used by the admin (Deals page) and by employees (their task -> Open deal).
+import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { LuCheck, LuExternalLink, LuPaperclip, LuPlus, LuTrash2, LuX } from 'react-icons/lu';
@@ -185,7 +186,7 @@ export default function DealView({ id, me, isAdmin, onClose, onChanged }) {
         <>
           <div className="dv-head">
             <div>
-              <h2>{d.companyName}</h2>
+              <h2>{isAdmin && d.companyId ? <Link href={`/lead?company=${d.companyId}&tab=company`} className="dv-company">{d.companyName}</Link> : d.companyName}</h2>
               <span className={`dv-badge ${d.step === 'complete' ? 'done' : ''}`}>{d.step === 'complete' ? 'Complete' : d.steps[cur]?.label}</span>
             </div>
             <button className="dv-btn ghost" onClick={onClose} aria-label="Close"><LuX /></button>
@@ -196,6 +197,18 @@ export default function DealView({ id, me, isAdmin, onClose, onChanged }) {
             <div><span>Received</span><b>{rupees(paid)}</b></div>
             <div><span>Balance</span><b>{rupees(Math.max(0, d.value - paid))}</b></div>
           </div>
+
+          {d.onboarding && (
+            <div className="dv-onb">
+              <b>Converted with</b>
+              {d.onboarding.items.map((x) => (
+                <span key={x.label}>
+                  <LuCheck /> {x.label}{x.amount ? ` · ${rupees(x.amount)}` : ''}
+                  {x.file?.id && <button type="button" className="dv-filebtn" onClick={() => openFile(x.file)}><LuPaperclip /> {x.file.name}</button>}
+                </span>
+              ))}
+            </div>
+          )}
 
           <ol className="dv-steps">
             {d.steps.map((s, i) => (
@@ -353,4 +366,9 @@ const css = `
   .dv-chan { min-width: 0; width: 100%; }
   .dv-when { min-width: 0; width: 100%; }
 }
+.dv-company { color: inherit; text-decoration: none; } .dv-company:hover { color: #0b87a5; text-decoration: underline; }
+.dv-onb { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 12px; padding: 10px 12px; margin: 10px 0; font-size: 13px; }
+.dv-onb b { color: #15803d; margin-right: 4px; }
+.dv-onb span { display: inline-flex; align-items: center; gap: 4px; color: #166534; }
+.dv-filebtn { background: none; border: 0; padding: 0 0 0 4px; font: inherit; color: #0b87a5; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 3px; }
 `;

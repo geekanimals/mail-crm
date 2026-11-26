@@ -79,7 +79,8 @@ export default function CompanyDetails({ id, onClose, convertFirst, inline = fal
       tick(i, { uploading: false });
     }
   };
-  const allTicked = Boolean(check?.length) && check.every((x) => x.done);
+  const isEstimate = (x) => /estimate/i.test(x.label);
+  const allTicked = Boolean(check?.length) && check.every((x) => x.done && (!isEstimate(x) || Number(x.amount) > 0));
   const loginText = (s) => {
     const crm = links?.crm || `${window.location.origin}/login`;
     return [`Geek Creative Agency - your account`, `Geek CRM: ${crm}`, ...(s.bounty ? [`Bounty brand dashboard: ${links?.bounty || 'https://bounty.geekcreativeagency.com/brands'}`] : []), `Email: ${s.email}`, `Password: ${s.password}`, ...(s.bounty ? ['The same email and password open both.'] : [])].join('\n');
@@ -131,7 +132,7 @@ export default function CompanyDetails({ id, onClose, convertFirst, inline = fal
     setBusy(true);
     try {
       if (!allTicked) throw new Error('Tick everything on the checklist first');
-      const checklist = check.map(({ label: l, done, file }) => ({ label: l, done, file }));
+      const checklist = check.map(({ label: l, done, file, amount }) => ({ label: l, done, file, amount: Number(amount) || undefined }));
       const r = await api(`/api/companies/${id}/convert`, { method: 'POST', body: { ...(conv.email ? conv : {}), checklist } });
       notify(`${r.company.name} is now an account`);
       if (r.links) setLinks(r.links);
@@ -169,10 +170,10 @@ export default function CompanyDetails({ id, onClose, convertFirst, inline = fal
     <div className={inline ? 'pl-inline-wrap' : 'pl-overlay'} onClick={inline ? undefined : onClose}>
       <style>{plCss}</style>
       <div className={`pl-panel ${inline ? 'pl-inline' : ''}`} onClick={(e) => e.stopPropagation()}>
-        <div className="row pl-head">
+        {!inline && <div className="row pl-head">
           <div className="pl-title"><span className="pl-icon"><LuBuilding2 /></span><div><h2>{c.name}</h2><span className={`stage ${c.stage}`}>{STAGE[c.stage]}</span></div></div>
-          {!inline && <button className="btn ghost sm" onClick={onClose}><LuX /></button>}
-        </div>
+          <button className="btn ghost sm" onClick={onClose}><LuX /></button>
+        </div>}
 
         {shared && (
           <div className="pl-shared">
@@ -206,6 +207,9 @@ export default function CompanyDetails({ id, onClose, convertFirst, inline = fal
                   <div key={x.label} className={`pl-checkrow ${x.done ? 'done' : ''}`}>
                     <label><input type="checkbox" checked={x.done} onChange={(e) => tick(i, { done: e.target.checked })} /> {x.label}</label>
                     <span className="pl-checkfile">
+                      {isEstimate(x) && (
+                        <label className="pl-amount">₹<input type="number" min={1} inputMode="numeric" placeholder="Amount" value={x.amount || ''} onChange={(e) => tick(i, { amount: e.target.value, done: x.done || Number(e.target.value) > 0 })} /></label>
+                      )}
                       {x.file ? <button type="button" className="pl-filelink" onClick={() => openFile(x.file)}><LuPaperclip /> {x.file.name}</button> : null}
                       <label className="btn ghost sm">
                         <LuPaperclip /> {x.uploading ? 'Uploading…' : x.file ? 'Change file' : 'Attach file'}
@@ -214,7 +218,7 @@ export default function CompanyDetails({ id, onClose, convertFirst, inline = fal
                     </span>
                   </div>
                 ))}
-                {check && !allTicked && <p className="small muted">{check.filter((x) => !x.done).length} left. A file is optional.</p>}
+                {check && !allTicked && <p className="small muted">{check.filter((x) => !x.done).length ? `${check.filter((x) => !x.done).length} left. ` : ''}{check.some((x) => isEstimate(x) && !(Number(x.amount) > 0)) ? 'Enter the estimate amount (it becomes the deal value). ' : ''}A file is optional.</p>}
               </div>
               <p className="small muted">Optional: create a login for the client so they can see the work your team is doing for them. Leave email empty to skip.</p>
               <div className="pl-grid">
@@ -269,7 +273,7 @@ export default function CompanyDetails({ id, onClose, convertFirst, inline = fal
             <b className="small">Checklist when converted{c.onboarding.at ? ` · ${date(c.onboarding.at)}` : ''}</b>
             {c.onboarding.items.map((x) => (
               <div key={x.label} className="pl-checkrow done">
-                <span><LuCheck /> {x.label}</span>
+                <span><LuCheck /> {x.label}{x.amount ? ` · ₹${Number(x.amount).toLocaleString('en-IN')}` : ''}</span>
                 {x.file?.id && <button type="button" className="pl-filelink" onClick={() => openFile(x.file)}><LuPaperclip /> {x.file.name}</button>}
               </div>
             ))}
@@ -359,7 +363,7 @@ export default function CompanyDetails({ id, onClose, convertFirst, inline = fal
 
         {['account', 'old_client'].includes(c.stage) ? (
           <>
-            {d.deal && <Link className="btn soft sm pl-addbtn" href={`/deals?open=${d.deal._id}`}>Open deal (estimate → payment → posts) →</Link>}
+            {d.deal && <Link className="btn soft sm pl-addbtn" href={`/deals?open=${d.deal._id}`}>Open deal (PO → payment → posts) →</Link>}
             <h3>Team on this account <Link href="/team" className="pl-teamlink">Manage team →</Link></h3>
             <div className="pl-chips">
               {(c.team || []).length === 0 && <span className="muted small">Nobody yet — add the people who will work on {c.name}.</span>}
@@ -566,6 +570,8 @@ export const plCss = `
 .pl-checkfile .btn { cursor: pointer; display: inline-flex; align-items: center; gap: 4px; }
 .pl-filelink { background: none; border: 0; padding: 0; font: inherit; font-size: 12.5px; color: var(--c-700); font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pl-checkdone { background: #f0fdf4; border-color: #bbf7d0; }
+.pl-amount { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; color: #334155; }
+.pl-amount input { width: 120px; padding: 6px 8px; }
 .pl-mailed { color: #15803d; display: inline-flex; align-items: center; gap: 4px; font-weight: 600; }
 .pl-cred a { color: var(--c-700); }
 .pl-fromsheet { font-style: normal; font-size: 11px; font-weight: 600; color: #a16207; background: #fef9c3; border-radius: 99px; padding: 1px 8px; margin-left: 8px; }

@@ -229,17 +229,20 @@ router.post(
     const items = need.map((label) => {
       const s = sent.find((x) => String(x?.label || '').trim().toLowerCase() === label.toLowerCase());
       const file = s?.file?.id ? { id: str(s.file.id, 40), name: str(s.file.name, 200) } : undefined;
-      return { label, done: s?.done === true, ...(file ? { file } : {}) };
+      const amount = /estimate/i.test(label) ? Math.round(Number(s?.amount) || 0) : 0;
+      return { label, done: s?.done === true, ...(amount > 0 ? { amount } : {}), ...(file ? { file } : {}) };
     });
     const missing = items.filter((i) => !i.done).map((i) => i.label);
     if (missing.length) throw fail(400, `Tick everything on the checklist first: ${missing.join(', ')}`);
+    const estItem = items.find((i) => /estimate/i.test(i.label));
+    if (estItem && !(estItem.amount > 0)) throw fail(400, 'Enter the estimate amount (it becomes the deal value)');
     const login = req.body?.email ? await saveClientLogin(c, req.body) : null; // login is optional
     c.onboarding = { items, at: new Date(), by: req.user || 'admin' };
     c.stage = 'account';
     await c.save();
     const contract = req.body?.contract?.id ? req.body.contract : null;
     const est = items.find((i) => /estimate/i.test(i.label));
-    const deal = await startDeal(c, { by: req.user, contract, estimateDone: Boolean(est?.done), estimateFile: est?.file || null }); // estimate ticked -> the deal starts at the PO step
+    const deal = await startDeal(c, { by: req.user, contract, estimateDone: Boolean(est?.done), estimateFile: est?.file || null, estimateAmount: est?.amount || 0 }); // estimate ticked -> the deal starts at the PO step
     res.json({ company: c, clientLogin: login && { ...login.user.toJSON(), password: login.password, bounty: login.bounty }, deal: deal._id, links: { crm: crmLoginUrl(), bounty: BOUNTY_BRANDS_URL } });
   })
 );

@@ -71,11 +71,13 @@ async function full(deal) {
   const d = deal.toObject ? deal.toObject() : deal;
   const tasks = await HrTask.find({ deal: d._id }).sort({ createdAt: 1 }).select('user step status due doneAt createdAt').lean();
   const who = await names(tasks.map((t) => t.user));
-  const company = await Company.findById(d.company).select('name website stage').lean();
+  const company = await Company.findById(d.company).select('name website stage onboarding').lean();
   const client = await User.findOne({ role: 'client', companyId: d.company }).select('email bountyMemberId').lean();
   return {
     ...d,
     companyName: company?.name || d.title,
+    companyId: company?._id || d.company,
+    onboarding: company?.onboarding?.items?.length ? company.onboarding : null, // the checklist ticked when it was converted
     clientLogin: client ? { email: client.email, bounty: Boolean(client.bountyMemberId) } : null,
     tasks: tasks.map((t) => ({ ...t, name: who.get(String(t.user))?.name || '—' })),
     steps: DEAL_STEPS.map((k) => ({ key: k, label: STEPS.find((s) => s.key === k).label, ask: STEPS.find((s) => s.key === k).ask })),
