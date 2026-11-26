@@ -238,7 +238,8 @@ router.post(
     c.stage = 'account';
     await c.save();
     const contract = req.body?.contract?.id ? req.body.contract : null;
-    const deal = await startDeal(c, { by: req.user, contract }); // Aanchal gets the estimate task
+    const est = items.find((i) => /estimate/i.test(i.label));
+    const deal = await startDeal(c, { by: req.user, contract, estimateDone: Boolean(est?.done), estimateFile: est?.file || null }); // estimate ticked -> the deal starts at the PO step
     res.json({ company: c, clientLogin: login && { ...login.user.toJSON(), password: login.password, bounty: login.bounty }, deal: deal._id, links: { crm: crmLoginUrl(), bounty: BOUNTY_BRANDS_URL } });
   })
 );

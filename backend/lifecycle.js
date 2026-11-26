@@ -197,11 +197,22 @@ async function emailDocument(deal, doc, { subject, intro }) {
 }
 
 /* ---------------- start a deal (company converted to an account) ---------------- */
-export async function startDeal(company, { by = 'Admin', contract } = {}) {
+// estimateDone: the estimate was ticked on the convert checklist, so the deal starts at the PO step
+// (estimateFile: its file, if one was attached there - it becomes the deal's estimate document)
+export async function startDeal(company, { by = 'Admin', contract, estimateDone = false, estimateFile = null } = {}) {
   let deal = await Deal.findOne({ company: company._id, step: { $ne: 'complete' } });
   if (!deal) {
-    deal = new Deal({ company: company._id, title: company.name, step: 'estimate' });
+    deal = new Deal({ company: company._id, title: company.name, step: estimateDone ? 'po' : 'estimate' });
     note(deal, by, 'Contract signed – the company is now an account');
+    if (estimateDone) {
+      note(deal, by, 'Estimate done on the convert checklist');
+      const f = estimateFile?.id && mongoose.isValidObjectId(estimateFile.id) ? await HrFile.findById(estimateFile.id) : null;
+      if (f) {
+        f.owner = deal._id; // the deal's team can open it like any deal document
+        await f.save();
+        deal.documents.push({ kind: 'estimate', name: f.name, file: { id: String(f._id), name: f.name, size: f.size, type: f.type }, by });
+      }
+    }
   }
   if (contract?.id) deal.documents.push({ kind: 'contract', name: 'Signed contract', file: contract, by });
   await closeTask({ company: company._id, step: { $in: ['meeting', 'contract'] } });

@@ -32,7 +32,7 @@ export default function DealsPage() {
       <div className="page-title">
         <div>
           <h1>Deals</h1>
-          <p>Every account&apos;s work, step by step: estimate → PO → advance → execution → report → full payment → case study → posts. Each step goes to its owner&apos;s task list on its own.</p>
+          <p>Every account&apos;s work, step by step: PO → advance → execution → report → full payment → case study → posts. Each step goes to its owner&apos;s task list on its own. The estimate is ticked on the checklist when the company is converted.</p>
         </div>
       </div>
       <div className="dl-top">

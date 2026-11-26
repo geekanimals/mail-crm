@@ -228,7 +228,7 @@ export default function CompanyDetails({ id, onClose, convertFirst, inline = fal
                   </label>
                 )}
               </div>
-              <p className="small muted">Converting gives the estimate task to its owner (see Deals → Step owners).</p>
+              <p className="small muted">The estimate is done here, so the deal starts at the Purchase order step and its owner gets that task (see Deals → Step owners). An estimate file attached above is saved with the deal.</p>
               <div className="row"><button className="btn sm" disabled={busy || !allTicked} title={allTicked ? '' : 'Tick everything on the checklist first'}><LuHandshake /> {busy ? 'Converting…' : 'Convert to account'}</button><button type="button" className="btn ghost sm" onClick={() => { setConv(null); setCheck(null); }}>Cancel</button></div>
             </form>
           ) : (
