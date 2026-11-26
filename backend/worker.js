@@ -38,6 +38,17 @@ export function expectedSendAt(at) {
   for (let i = 0; i < 4 * 24 * 15 && !inSendWindow(new Date(t)); i++) t += Q;
   return new Date(t);
 }
+/** older emails (follow-ups + first emails left from an earlier day) wait for PENDING_START_HOUR; today's upload does not */
+const pendingOpen = (at = new Date()) => tzNow(at).h >= config.pendingStart || config.pendingStart <= config.windowStart;
+export function expectedPendingAt(at) {
+  let t = expectedSendAt(at).getTime();
+  const Q = 15 * 60000;
+  for (let i = 0; i < 4 * 24 * 15 && !(inSendWindow(new Date(t)) && pendingOpen(new Date(t))); i++) t = expectedSendAt(new Date(t + Q)).getTime();
+  return new Date(t);
+}
+/** an email of today's upload: a first email whose person was put in the campaign today */
+const isFresh = (e, today = startOfToday()) => e.step === 0 && e.createdAt && new Date(e.createdAt) >= today;
+
 /** start of the next sending day after `t` (skips the rest of today's sending hours, weekends too) */
 function nextSendDay(t) {
   const Q = 15 * 60000;
@@ -59,15 +70,22 @@ export async function projectQueue() {
   projected = { at: Date.now(), map: await buildProjection() };
   return projected.map;
 }
+let sentTodayCache = 0;
 async function buildProjection() {
+  sentTodayCache = await sentToday();
   const campaigns = await Campaign.find({ status: 'active' }).select('_id').lean();
   const list = (await Enrollment.find({ status: 'active', paused: { $ne: true }, campaign: { $in: campaigns.map((c) => c._id) } })
-    .select('nextSendAt step').lean())
-    .map((e) => ({ id: String(e._id), first: e.step === 0, due: new Date(e.nextSendAt || Date.now()).getTime(), ready: expectedSendAt(e.nextSendAt || new Date()).getTime() }));
+    .select('nextSendAt step createdAt').lean())
+    .map((e) => {
+      const due = new Date(e.nextSendAt || Date.now());
+      // today's upload only counts as new today; if it can't go today it waits with the older emails tomorrow
+      const fresh = isFresh(e) && dayKey(expectedSendAt(due)) === dayKey(Date.now()) && sentTodayCache < config.dailyLimit;
+      return { id: String(e._id), first: fresh, step0: e.step === 0, due: due.getTime(), ready: (fresh ? expectedSendAt(due) : expectedPendingAt(due)).getTime() };
+    });
   const out = new Map();
   if (!list.length) return out;
-  // same order as the queue: of the emails that are due, first emails go first, then the longest-waiting follow-up
-  const before = (a, b) => (a.first !== b.first ? (a.first ? -1 : 1) : a.due - b.due);
+  // same order as the queue: of the emails that are due, today's upload goes first, then the longest-waiting one
+  const before = (a, b) => (a.first !== b.first ? (a.first ? -1 : 1) : a.step0 !== b.step0 ? (a.step0 ? -1 : 1) : a.due - b.due); // today's upload, then first emails left from earlier, then follow-ups
   let cursor = expectedSendAt(new Date()).getTime();
   const today = dayKey(Date.now());
   let dayLeft = config.dailyLimit - (dayKey(cursor) === today ? await sentToday() : 0);
@@ -83,10 +101,12 @@ async function buildProjection() {
       continue;
     }
     let pick = null;
-    for (const e of left) if (e.ready <= cursor && (!pick || before(e, pick) < 0)) pick = e;
+    const olderOk = pendingOpen(new Date(cursor)); // older emails only from PENDING_START_HOUR
+    for (const e of left) if (e.ready <= cursor && (e.first || olderOk) && (!pick || before(e, pick) < 0)) pick = e;
     if (!pick) {
-      // nothing due yet: jump to the next moment something is
-      const t = Math.min(...left.map((e) => e.ready));
+      // nothing can go yet: jump to the next moment something can
+      const olderAt = olderOk ? cursor : expectedPendingAt(new Date(cursor)).getTime();
+      const t = Math.min(...left.map((e) => (e.first ? e.ready : Math.max(e.ready, olderAt))));
       if (dayKey(t) !== dayKey(cursor)) { dayLeft = config.dailyLimit; hourLeft = config.hourlyLimit; hourStart = t; }
       cursor = t;
       continue;
@@ -367,9 +387,20 @@ async function sendStep(enr, campaign) {
 }
 
 let sending = false;
+/** a file was just uploaded: send its first emails now (an older batch that is sending stops after its current email) */
+let freshKick = false;
+export function kickFresh(tries = 0) {
+  freshKick = true;
+  forgetProjection();
+  runQueue().then((r) => {
+    if (r?.reason === 'already running' && tries < 60) setTimeout(() => kickFresh(tries + 1), 5000);
+  });
+}
+
 export async function runQueue({ force = false } = {}) {
   if (sending) return { reason: 'already running' };
   sending = true;
+  freshKick = false;
   const result = { sent: 0, failed: 0 };
   try {
     if (!smtpReady()) return Object.assign(result, { reason: 'SMTP not configured' });
@@ -378,18 +409,29 @@ export async function runQueue({ force = false } = {}) {
     const dayLeft = config.dailyLimit - (await sentToday());
     if (dayLeft <= 0) return Object.assign(result, { reason: 'daily limit reached' });
     const hourLeft = config.hourlyLimit - (await sentLastHour());
-    if (hourLeft <= 0) return Object.assign(result, { reason: 'hourly limit reached - continues next hour' });
-    let left = Math.min(dayLeft, hourLeft);
+    let left = dayLeft;
 
     const campaigns = new Map((await Campaign.find({ status: 'active' })).map((c) => [String(c._id), c]));
-    // Order: first emails of new leads go first (today's upload never waits behind old follow-ups),
-    // then follow-ups - the one waiting longest first.
+    // Order: 1) today's upload - first emails of people put in a campaign today; they go at once (from SEND_WINDOW_START),
+    //           not held by the hourly limit, only the daily one.
+    //        2) older emails - first emails left from an earlier day, then follow-ups, the longest-waiting first;
+    //           only from PENDING_START_HOUR and inside the hourly limit.
+    const today = startOfToday();
     const dueQ = { status: 'active', paused: { $ne: true }, campaign: { $in: [...campaigns.keys()] }, nextSendAt: { $lte: new Date() } };
-    const max = Math.min(left, 200);
-    const firsts = await Enrollment.find({ ...dueQ, step: 0 }).sort({ nextSendAt: 1 }).limit(max);
-    const followUps = firsts.length < max ? await Enrollment.find({ ...dueQ, step: { $gt: 0 } }).sort({ nextSendAt: 1 }).limit(max - firsts.length) : [];
-    const due = [...firsts, ...followUps];
-    if (!due.length) return Object.assign(result, { reason: 'nothing due' });
+    const fresh = await Enrollment.find({ ...dueQ, step: 0, createdAt: { $gte: today } }).sort({ nextSendAt: 1 }).limit(Math.min(left, 200));
+    let older = [];
+    const olderMax = Math.min(left - fresh.length, hourLeft, 200);
+    if (olderMax > 0 && (force || pendingOpen())) {
+      const oldFirsts = await Enrollment.find({ ...dueQ, step: 0, createdAt: { $lt: today } }).sort({ nextSendAt: 1 }).limit(olderMax);
+      const followUps = oldFirsts.length < olderMax ? await Enrollment.find({ ...dueQ, step: { $gt: 0 } }).sort({ nextSendAt: 1 }).limit(olderMax - oldFirsts.length) : [];
+      older = [...oldFirsts, ...followUps];
+    }
+    const due = [...fresh, ...older];
+    if (!due.length) {
+      const reason = hourLeft <= 0 && !fresh.length ? 'hourly limit reached - continues next hour' : !force && !pendingOpen() ? `older emails wait until ${config.pendingStart}:00; nothing new from today` : 'nothing due';
+      return Object.assign(result, { reason });
+    }
+    let olderLeft = olderMax;
 
     // Check the inbox before any follow-up. If the check fails, hold follow-ups (never risk mailing someone who replied).
     let holdFollowUps = false;
@@ -406,6 +448,8 @@ export async function runQueue({ force = false } = {}) {
     for (const e of due) {
       if (left <= 0 || (await getSetting('paused', false))) break;
       if (holdFollowUps && e.step > 0) continue;
+      const isOld = !isFresh(e, today);
+      if (isOld && (freshKick || olderLeft <= 0)) break; // a new file was uploaded: its emails go first (next run)
       const fresh = await Enrollment.findById(e._id);
       const campaign = campaigns.get(String(e.campaign));
       if (fresh?.status !== 'active' || fresh.paused || (await Campaign.findById(campaign._id).select('status').lean())?.status !== 'active') continue;
@@ -413,6 +457,7 @@ export async function runQueue({ force = false } = {}) {
       if (r === 'sent') {
         result.sent++;
         left--;
+        if (isOld) olderLeft--;
         await sleep(config.sendDelaySec * 1000 * (1 + Math.random() * 0.25)); // at least SEND_DELAY_SECONDS, plus a little random extra (looks human)
       }
       if (r === 'failed') result.failed++;

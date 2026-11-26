@@ -56,6 +56,7 @@ export const config = {
   sendDelaySec: Math.max(0, num('SEND_DELAY_SECONDS', 25)),
   windowStart: num('SEND_WINDOW_START', 9),
   windowEnd: num('SEND_WINDOW_END', 19),
+  pendingStart: num('PENDING_START_HOUR', 12), // older emails (follow-ups, first emails left from earlier days) go from this hour; today's upload goes from windowStart
   timezone: str('TIMEZONE', 'Asia/Kolkata'),
   skipWeekends: bool('SKIP_WEEKENDS', true), // Sat/Sun off: nothing is sent, follow-up gaps count working days only
   // tracking only works when PUBLIC_BACKEND_URL is a real public address (not localhost)

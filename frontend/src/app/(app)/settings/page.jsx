@@ -12,6 +12,18 @@ export default function SettingsPage() {
   const [gap, setGap] = useState(''); // follow-up gap being changed
   const [gapPlan, setGapPlan] = useState(null); // preview: what the change would move
   const [gapBusy, setGapBusy] = useState(false);
+  const [pend, setPend] = useState(''); // hour older emails start
+  const hourLabel = (h) => `${((Number(h) + 11) % 12) + 1}:00 ${Number(h) < 12 ? 'AM' : 'PM'}`;
+  const savePending = async () => {
+    try {
+      const r = await api('/api/settings/pending-start', { method: 'PUT', body: { hour: Number(pend) } });
+      notify(`Older emails now start at ${hourLabel(r.pendingStart)}`);
+      setPend('');
+      load();
+    } catch (e) {
+      notify(e.message, 'error');
+    }
+  };
 
   const load = useCallback(
     () =>
@@ -114,6 +126,19 @@ export default function SettingsPage() {
           <p><span>Hourly limit</span>{s.rules.sentLastHour} / {s.rules.hourlyLimit} sent in the last hour</p>
           <p><span>Gap between emails</span>{s.rules.delay} sec</p>
           <p><span>Sending hours</span>{s.rules.window} {s.rules.openNow ? '· open now' : '· closed now'}</p>
+          {s.rules.pendingStart !== undefined && (
+            <div className="st-gap">
+              <p><span>Order</span>Today&apos;s upload goes at once (from {hourLabel(s.rules.windowStart)}), before everything else. Older emails (follow-ups, first emails left from earlier days) start at {hourLabel(s.rules.pendingStart)}.</p>
+              <div className="st-gaprow">
+                <label>Older emails start at
+                  <select value={pend || s.rules.pendingStart} onChange={(e) => setPend(e.target.value)}>
+                    {Array.from({ length: s.rules.windowEnd - s.rules.windowStart }, (_, i) => s.rules.windowStart + i).map((h) => <option key={h} value={h}>{hourLabel(h)}</option>)}
+                  </select>
+                </label>
+                <button className="btn soft sm" disabled={!pend || Number(pend) === s.rules.pendingStart} onClick={savePending}>Save</button>
+              </div>
+            </div>
+          )}
           <div className="st-gap">
             <p><span>Follow-ups</span>{s.rules.sequence}</p>
             <div className="st-gaprow">

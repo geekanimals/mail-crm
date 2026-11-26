@@ -5,7 +5,7 @@ import { cleanFields, mapColumns } from '../sheets.js';
 import { config } from '../config.js';
 import { fill, parseCc } from '../mail.js';
 import { FOLLOW_UPS } from '../templates.js';
-import { addWorkingDays, enroll, expectedSendAt, forgetProjection, gapFor, projectQueue, newText, pickEmail, totalSteps, withSignature, markReplied, markUnsubscribed, runQueue, stopAll } from '../worker.js';
+import { addWorkingDays, enroll, expectedSendAt, forgetProjection, gapFor, kickFresh, projectQueue, newText, pickEmail, totalSteps, withSignature, markReplied, markUnsubscribed, runQueue, stopAll } from '../worker.js';
 import { ah, checkId, fail, str, validEmail } from '../utils.js';
 
 const router = Router();
@@ -277,7 +277,7 @@ router.post(
     if (campaign && ids.length) {
       ({ added, noFirstEmail, error: enrollError } = await enroll(campaign, { contactIds: ids }));
       campaignId = campaign._id;
-      setImmediate(() => runQueue());
+      setImmediate(() => kickFresh()); // today's upload goes at once, before older emails
     }
     const resumed = campaign ? updatedIds.length : 0;
     res.json({ inserted: inserted.length, updated, resumed, alreadyInCrm: existing.size - resumed, dupInFile, invalid, addedToCampaign: added, noFirstEmail, enrollError, campaignId, batch, companies });
@@ -425,7 +425,7 @@ router.post(
     }
     if (campaign) {
       await Campaign.updateOne({ _id: campaign._id }, { $set: { status: 'active' } });
-      setImmediate(() => runQueue());
+      setImmediate(() => kickFresh());
     }
     res.json({ ...out, errors: out.errors.slice(0, 50), campaignId: campaign?._id || null, batch });
   })

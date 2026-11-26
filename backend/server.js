@@ -110,6 +110,8 @@ async function migrate() {
   await step('settings', async () => {
     const days = await getSetting('intervalDays', null);
     if (Number.isInteger(days) && days >= 1 && days <= 30) config.intervalDays = days;
+    const ps = await getSetting('pendingStartHour', null);
+    if (Number.isInteger(ps) && ps >= config.windowStart && ps < config.windowEnd) config.pendingStart = ps;
   });
   // email became optional: the unique index must allow people without an email
   await step('contact indexes', async () => {

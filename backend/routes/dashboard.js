@@ -3,7 +3,7 @@ import { Router } from 'express';
 import { config, imapReady, smtpReady } from '../config.js';
 import { Campaign, Contact, EmailLog, Enrollment, Notification, Reply, Suppression, getSetting, setSetting } from '../models.js';
 import { parseCc, sendMail, verifySmtp } from '../mail.js';
-import { applyFollowUpGap, checkReplies, globalCc, newText, inSendWindow, sentLastHour, runQueue, sentToday, startOfToday, status } from '../worker.js';
+import { applyFollowUpGap, checkReplies, forgetProjection, globalCc, newText, inSendWindow, sentLastHour, runQueue, sentToday, startOfToday, status } from '../worker.js';
 import { campaignStats } from './campaigns.js';
 import { ah, checkId, fail, pct, validEmail } from '../utils.js';
 
@@ -160,6 +160,9 @@ router.get(
         sentToday: await sentToday(),
         delay: config.sendDelaySec,
         window: `${config.windowStart}:00 - ${config.windowEnd}:00 (${config.timezone})`,
+        windowStart: config.windowStart,
+        windowEnd: config.windowEnd,
+        pendingStart: config.pendingStart,
         openNow: inSendWindow(),
         sequence: `every ${config.intervalDays} ${config.skipWeekends ? 'working ' : ''}days`,
         gapDays: config.intervalDays,
@@ -200,6 +203,19 @@ router.put(
     const days = Math.floor(Number(req.body?.days));
     if (!(days >= 1 && days <= 30)) throw fail(400, 'Choose between 1 and 30 working days');
     res.json({ days, preview: req.query.preview === '1', ...(await applyFollowUpGap(days, { preview: req.query.preview === '1' })) });
+  })
+);
+
+// the hour older emails (follow-ups, first emails left from earlier days) start; today's upload always goes at once
+router.put(
+  '/settings/pending-start',
+  ah(async (req, res) => {
+    const hour = Math.floor(Number(req.body?.hour));
+    if (!(hour >= config.windowStart && hour < config.windowEnd)) throw fail(400, `Choose an hour from ${config.windowStart} to ${config.windowEnd - 1}`);
+    await setSetting('pendingStartHour', hour);
+    config.pendingStart = hour;
+    forgetProjection();
+    res.json({ pendingStart: hour });
   })
 );
 
