@@ -5,7 +5,7 @@ import cron from 'node-cron';
 import { ImapFlow } from 'imapflow';
 import { simpleParser } from 'mailparser';
 import { config, imapReady, smtpReady } from './config.js';
-import { Campaign, Contact, EmailLog, Enrollment, Reply, STAGE_RANK, Suppression, bumpStage, getSetting, setSetting, remember, notify, upsertCompany } from './models.js';
+import { Campaign, Company, Contact, EmailLog, Enrollment, Reply, STAGE_RANK, Suppression, bumpStage, companyFromSheet, getSetting, setSetting, remember, notify, upsertCompany } from './models.js';
 import { bounceReason, buildEmail, sendMail, isBadAddress, parseCc, unsubscribeUrl } from './mail.js';
 import { FOLLOW_UPS, SIGNATURE, SIGNATURE_KEY } from './templates.js';
 import { joinNewsletter, runNewsletters } from './newsletter.js';
@@ -727,7 +727,37 @@ export async function applyFollowUpGap(days, { preview = false } = {}) {
   return { campaigns: campaigns.length, rescheduled: moved, ownGap: await Enrollment.countDocuments({ status: 'active', gapDays: { $gte: 1 } }) };
 }
 
+/** once: companies get their empty industry / location / LinkedIn / website from their people's uploaded sheet rows */
+export async function fillCompaniesFromSheets() {
+  const KEYS = ['website', 'industry', 'location', 'linkedin'];
+  const companies = await Company.find({ $or: KEYS.map((k) => ({ $or: [{ [k]: { $exists: false } }, { [k]: '' }, { [k]: null }] })) }).select(KEYS.join(' ')).lean();
+  const people = await Contact.find({ companyId: { $in: companies.map((c) => c._id) }, 'fields.0': { $exists: true } }).select('companyId fields').sort({ createdAt: 1 }).lean();
+  const byCo = new Map();
+  for (const p of people) (byCo.get(String(p.companyId)) || byCo.set(String(p.companyId), []).get(String(p.companyId))).push(...p.fields);
+  const ops = [];
+  const count = Object.fromEntries(KEYS.map((k) => [k, 0]));
+  for (const c of companies) {
+    const sheet = companyFromSheet(byCo.get(String(c._id)) || []);
+    const set = {};
+    for (const k of KEYS) if (!c[k] && sheet[k]) (set[k] = sheet[k]), count[k]++;
+    if (Object.keys(set).length) ops.push({ updateOne: { filter: { _id: c._id }, update: { $set: set } } });
+  }
+  if (ops.length) await Company.bulkWrite(ops, { ordered: false });
+  console.log(`[companies] filled from sheets: ${ops.length} companies`, count);
+  return { companies: ops.length, ...count };
+}
+
 export function startWorker() {
+  setTimeout(async () => {
+    try {
+      if ((await getSetting('company_sheet_fill_v', 0)) < 1) {
+        await fillCompaniesFromSheets();
+        await setSetting('company_sheet_fill_v', 1);
+      }
+    } catch (e) {
+      console.error('[companies]', e.message);
+    }
+  }, 20000);
   cron.schedule('* * * * *', () => runQueue());
   cron.schedule('* * * * *', () => runNewsletters());
   if (imapReady()) {

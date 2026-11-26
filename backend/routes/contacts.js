@@ -30,7 +30,7 @@ async function linkCompanies(rows, stage) {
     // the company takes the furthest stage of its people (upsertCompany never moves a stage back)
     const rank = (s) => (STAGES.includes(s) ? STAGES.indexOf(s) : -1);
     const best = list.map((r) => r.pipeline).filter((s) => STAGES.includes(s)).sort((a, b) => rank(b) - rank(a))[0];
-    const c = await upsertCompany(name, { website: first.website, industry: first.industry, location: first.location, source: first.batch || '', stage: best || stage || 'cold' });
+    const c = await upsertCompany(name, { website: first.website, industry: first.industry, location: first.location, source: first.batch || '', stage: best || stage || 'cold', sheetFields: list.flatMap((r) => r.fields || []) });
     if (!c) continue;
     const ids = list.map((r) => r._id).filter(Boolean);
     const emails = list.map((r) => r.email).filter(Boolean);

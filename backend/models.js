@@ -162,7 +162,35 @@ export async function bumpStage(companyId, stage) {
 }
 
 /** Find a company by name or create it. Fills empty details; moves the stage forward, never back. */
+/** company details that an uploaded sheet row already has (industry, HQ city, company LinkedIn, website) */
+const EMPTY_VAL = /^(none|n\/a|-|not verified|unknown|null)$/i;
+export function companyFromSheet(fields = []) {
+  const get = (names) => {
+    for (const f of fields) {
+      const k = String(f?.k || '').replace(/_/g, ' ').trim().toLowerCase();
+      const v = String(f?.v ?? '').trim();
+      if (names.includes(k) && v && !EMPTY_VAL.test(v)) return v.slice(0, 300);
+    }
+    return '';
+  };
+  const hq = get(['headcount evidence', 'headcount']).match(/\bHQ\s+([^()]+?)\s*(?:\(|$)/i)?.[1]?.replace(/[,\s]+$/, '') || '';
+  const li = get(['linkedin url', 'company linkedin', 'company linkedin url', 'linkedin']);
+  return {
+    industry: get(['service category', 'industry', 'category', 'sector']),
+    location: get(['location', 'city', 'hq', 'headquarters']) || hq,
+    linkedin: /linkedin\.com\/company/i.test(li) ? li : '',
+    website: get(['website', 'company website']),
+  };
+}
+
 export async function upsertCompany(name, data = {}) {
+  // empty details are filled from the people's sheet rows (never over a value that is already there)
+  if (data.sheetFields?.length) {
+    const fromSheet = companyFromSheet(data.sheetFields);
+    data = { ...data };
+    for (const k of ['website', 'industry', 'location', 'linkedin']) if (!data[k] && fromSheet[k]) data[k] = fromSheet[k];
+    delete data.sheetFields;
+  }
   const key = companyKey(name);
   if (!key) return null;
   let c = await Company.findOne({ key });
