@@ -35,20 +35,23 @@ function schedule(b = {}) {
 
 /** stats for many campaigns at once */
 export async function campaignStats(ids) {
-  const [enr, logs] = await Promise.all([
+  const [enr, logs, waiting] = await Promise.all([
     Enrollment.aggregate([{ $match: { campaign: { $in: ids } } }, { $group: { _id: { c: '$campaign', s: '$status' }, n: { $sum: 1 } } }]),
     EmailLog.aggregate([
       { $match: { campaign: { $in: ids }, status: 'sent' } },
       { $group: { _id: '$campaign', sent: { $sum: 1 }, opened: { $sum: { $cond: [{ $ifNull: ['$openedAt', false] }, 1, 0] } }, people: { $addToSet: '$contact' } } },
     ]),
+    // still waiting for their first email (in the queue; the daily limit decides when it goes)
+    Enrollment.aggregate([{ $match: { campaign: { $in: ids }, status: 'active', step: 0 } }, { $group: { _id: '$campaign', n: { $sum: 1 }, next: { $min: '$nextSendAt' } } }]),
   ]);
   const out = {};
-  for (const i of ids) out[i] = { contacts: 0, active: 0, replied: 0, completed: 0, unsubscribed: 0, bounced: 0, sent: 0, opened: 0, reached: 0 };
+  for (const i of ids) out[i] = { contacts: 0, active: 0, replied: 0, completed: 0, unsubscribed: 0, bounced: 0, sent: 0, opened: 0, reached: 0, waiting: 0 };
   for (const r of enr) {
     out[r._id.c][r._id.s] = r.n;
     out[r._id.c].contacts += r.n;
   }
   for (const r of logs) Object.assign(out[r._id], { sent: r.sent, opened: r.opened, reached: r.people.length });
+  for (const r of waiting) Object.assign(out[r._id], { waiting: r.n, waitingFrom: r.next });
   for (const s of Object.values(out)) {
     s.openRate = pct(s.opened, s.sent);
     s.replyRate = pct(s.replied, s.reached);

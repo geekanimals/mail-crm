@@ -178,7 +178,7 @@ function Detail({ id, onBack, onEdit }) {
       </div>
 
       <div className="cp-stats">
-        {[['Contacts', c.file ? c.file.inFile : s.contacts], ...(c.file && c.file.inFile !== s.contacts ? [['Getting emails', s.contacts]] : []), ['In progress', s.active], ['Sent', s.sent], ['Opened', `${s.openRate}%`], ['Replied', `${s.replied} (${s.replyRate}%)`], ['Unsubscribed', s.unsubscribed]].map(([l, v]) => (
+        {[['Contacts', c.file ? c.file.inFile : s.contacts], ...(c.file && c.file.inFile !== s.contacts ? [['Getting emails', s.contacts]] : []), ['Got the first email', s.reached], ...(s.waiting ? [['Waiting for the first email', s.waiting]] : []), ['In progress', s.active], ['Sent', s.sent], ['Opened', `${s.openRate}%`], ['Replied', `${s.replied} (${s.replyRate}%)`], ['Unsubscribed', s.unsubscribed]].map(([l, v]) => (
           <div key={l} className="card"><span>{l}</span><b>{typeof v === 'number' ? num(v) : v}</b></div>
         ))}
       </div>

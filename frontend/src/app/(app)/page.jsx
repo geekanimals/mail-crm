@@ -182,7 +182,15 @@ function CampaignHistory() {
                     <td data-label="Status"><span className={`badge ${c.status}`}>{c.status}</span></td>
                     <td data-label="Emails">{c.fromFile ? 'From file' : c.emails}</td>
                     <td data-label="Contacts">{num(c.file ? c.file.inFile : c.stats.contacts)}{c.file && c.file.inFile !== c.stats.contacts && <small className="dash-file">{fileLine(c.file, num(c.stats.contacts))}</small>}</td>
-                    <td data-label="Sent">{num(c.stats.sent)}</td>
+                    <td data-label="Sent">
+                      {num(c.stats.sent)}
+                      <small className="dash-prog">
+                        {num(c.stats.reached)} of {num(c.stats.contacts)} got the first email
+                        {c.stats.waiting > 0 && <em>{num(c.stats.waiting)} waiting for the first email (daily limit)</em>}
+                        {c.stats.replied > 0 && <em className="ok">{num(c.stats.replied)} replied</em>}
+                        {c.stats.bounced > 0 && <em className="bad">{num(c.stats.bounced)} bounced</em>}
+                      </small>
+                    </td>
                     <td data-label="Opened">{num(c.stats.opened)}<small>{c.stats.openRate}%</small></td>
                     <td data-label="Replied">{num(c.stats.replied)}<small>{c.stats.replyRate}%</small></td>
                   </tr>
@@ -242,6 +250,10 @@ const css = `
 .dash-search input { width: 100%; padding-left: 36px; }
 .dash-row { cursor: pointer; }
 .dash-file { color: #b45309 !important; }
+.dash-prog { display: flex !important; flex-direction: column; gap: 1px; color: #64748b !important; font-size: 11.5px; min-width: 170px; }
+.dash-prog em { font-style: normal; color: #b45309; font-weight: 600; }
+.dash-prog em.ok { color: #15803d; }
+.dash-prog em.bad { color: #be123c; }
 .dash-row:hover td { background: rgba(50,193,223,.06); }
 .dash-pager { display: flex; align-items: center; justify-content: center; gap: 14px; margin-top: 14px; font-size: 13.5px; color: #64748b; flex-wrap: wrap; }
 .dash-chart { position: relative; height: 270px; display: flex; align-items: stretch; gap: 6px; padding: 0 0 0 34px; border-bottom: 1px solid rgba(148,163,184,.25); margin-bottom: 10px; }
