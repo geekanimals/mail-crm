@@ -4,7 +4,7 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
-import { LuBan, LuBell, LuBriefcase, LuCheck, LuFileSpreadsheet, LuFileUser, LuGlobe, LuHandshake, LuKanban, LuSparkles, LuLightbulb, LuNewspaper, LuLayoutDashboard, LuLogOut, LuMenu, LuReply, LuSend, LuSettings, LuTrendingUp, LuUserCog, LuUsers, LuX } from 'react-icons/lu';
+import { LuBan, LuBell, LuBriefcase, LuCheck, LuFileUser, LuGlobe, LuHandshake, LuKanban, LuSparkles, LuLightbulb, LuNewspaper, LuLayoutDashboard, LuLogOut, LuMenu, LuReply, LuSend, LuSettings, LuTrendingUp, LuUserCog, LuUsers, LuX } from 'react-icons/lu';
 import { api, campaignName, getToken, setRole, setToken } from '@/lib/api';
 
 const ICON = process.env.NEXT_PUBLIC_LOGO_ICON_URL || '/fav.png'; // square logo (always shown)
@@ -17,7 +17,6 @@ const MENU = [
   ['/pipeline', 'Pipeline', LuKanban],
   ['/deals', 'Deals', LuBriefcase],
   ['/team', 'Employees', LuUserCog],
-  ['/import', 'Import', LuFileSpreadsheet],
   ['/replies', 'Replies', LuReply],
   ['/website-leads', 'Website Leads', LuGlobe],
   ['/job-applications', 'Job Applications', LuFileUser],
@@ -146,7 +145,7 @@ export default function AppLayout({ children }) {
 
   if (!user) return <div className="loading"><style>{css}</style><span className="spinner" /></div>;
 
-  const isActive = (href) => (href === '/' ? path === '/' || path.startsWith('/campaigns') || path.startsWith('/emails') : path.startsWith(href) || (href === '/pipeline' && path.startsWith('/lead'))); // campaigns open from the dashboard; a lead page belongs to Pipeline
+  const isActive = (href) => (href === '/' ? path === '/' || path.startsWith('/campaigns') || path.startsWith('/emails') || path.startsWith('/import') : path.startsWith(href) || (href === '/pipeline' && path.startsWith('/lead'))); // campaigns and the upload page open from the dashboard; a lead page belongs to Pipeline
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
   const today = new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' });

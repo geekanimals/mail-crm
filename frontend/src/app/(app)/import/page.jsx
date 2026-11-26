@@ -8,7 +8,7 @@
 // sent (first sent / followup 2 sent ...) and the next follow-up goes from there.
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { LuCalendarDays, LuDownload, LuFileSpreadsheet, LuPlay, LuUpload } from 'react-icons/lu';
+import { LuCalendarDays, LuChevronLeft, LuDownload, LuFileSpreadsheet, LuPlay, LuUpload } from 'react-icons/lu';
 import { api, campaignName, num, notify } from '@/lib/api';
 
 // [key, label, rules tried in order, never these] - e.g. "company_name" is never taken as the person's name
@@ -361,6 +361,7 @@ export default function ImportPage() {
   return (
     <>
       <style>{css}</style>
+      <Link href="/" className="imp-back"><LuChevronLeft /> Dashboard</Link>
       <div className="page-title">
         <div>
           <h1>Import Contacts</h1>
@@ -755,4 +756,5 @@ const css = `
 .im-result b { font-size: 24px; }
 .im-result span { font-size: 12.5px; color: #64748b; }
 @media (max-width: 700px) { .im-result { grid-template-columns: repeat(2, 1fr); } }
+.imp-back { display: inline-flex; align-items: center; gap: 4px; color: var(--c-700); font-weight: 600; margin-bottom: 8px; }
 `;
