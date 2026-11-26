@@ -17,7 +17,7 @@ router.get(
     const since = new Date(startOfToday().getTime() - (days - 1) * 86400000);
     const day = (field) => ({ $dateToString: { format: '%Y-%m-%d', date: `$${field}`, timezone: config.timezone } });
 
-    const [contacts, sent, opened, clicked, byStatus, active, sentDays, replyDays, stepSent, stepReplies, recent, todaySent, unhandled] = await Promise.all([
+    const [contacts, sent, opened, clicked, byStatus, active, sentDays, replyDays, stepSent, stepReplies, recent, todaySent, unhandled, openDays] = await Promise.all([
       Contact.countDocuments(),
       EmailLog.countDocuments({ status: 'sent' }),
       EmailLog.countDocuments({ status: 'sent', openedAt: { $exists: true } }),
@@ -31,6 +31,7 @@ router.get(
       Campaign.find().sort({ updatedAt: -1 }).limit(5).lean(),
       sentToday(),
       Reply.countDocuments({ handled: false, isAutoReply: false }),
+      EmailLog.aggregate([{ $match: { status: 'sent', openedAt: { $gte: since } } }, { $group: { _id: day('openedAt'), n: { $sum: 1 } } }]), // opens per day (chart labels)
     ]);
 
     const s = Object.fromEntries(byStatus.map((x) => [x._id, x.n]));
@@ -38,10 +39,11 @@ router.get(
     const toMap = (rows) => Object.fromEntries(rows.map((r) => [r._id, r.n]));
     const sentMap = toMap(sentDays);
     const replyMap = toMap(replyDays);
+    const openMap = toMap(openDays);
     const chart = [];
     for (let i = 0; i < days; i++) {
       const key = new Date(since.getTime() + i * 86400000 + 12 * 3600000).toLocaleDateString('en-CA', { timeZone: config.timezone });
-      chart.push({ date: key, sent: sentMap[key] || 0, replied: replyMap[key] || 0 });
+      chart.push({ date: key, sent: sentMap[key] || 0, opened: openMap[key] || 0, replied: replyMap[key] || 0 });
     }
     const sMap = toMap(stepSent);
     const rMap = toMap(stepReplies);

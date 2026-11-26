@@ -75,6 +75,18 @@ export default function ContactsPage() {
   const load = useCallback(() => {
     api('/api/contacts', { query: { search, status, page, seq } }).then(setData).catch((e) => notify(e.message, 'error'));
   }, [search, status, page, seq]);
+  // opened from a dashboard link (e.g. /contacts?status=bounced or ?seq=running): start on that list
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    const st = q.get('status');
+    const sq = q.get('seq');
+    if ((st && TABS.includes(st)) || (sq && SEQS.some(([k]) => k === sq))) {
+      setTimeout(() => {
+        if (st && TABS.includes(st)) setStatus(st);
+        if (sq && SEQS.some(([k]) => k === sq)) setSeq(sq);
+      }, 0);
+    }
+  }, []);
 
   // pause / play / set days - for one person (ids = [id]) or for the selection
   const followUps = async (action, { ids, gapDays } = {}) => {

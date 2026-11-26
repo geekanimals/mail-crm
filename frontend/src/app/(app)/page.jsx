@@ -1,13 +1,18 @@
 'use client';
-// Dashboard: totals, daily chart, replies by follow-up, recent campaigns
+// Dashboard: totals, daily chart, replies by follow-up, recent campaigns. Every box opens the page behind its number.
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { LuFileSpreadsheet, LuMailOpen, LuReply, LuSend, LuUsers } from 'react-icons/lu';
 import { api, num, notify } from '@/lib/api';
 
+const dayName = (iso, long = false) => new Date(`${iso}T12:00:00`).toLocaleDateString('en-IN', long ? { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' } : { day: 'numeric', month: 'short' });
+
 export default function Dashboard() {
+  const router = useRouter();
   const [days, setDays] = useState(7);
   const [d, setD] = useState(null);
+  const [hover, setHover] = useState(null); // the day under the mouse (chart)
 
   useEffect(() => {
     api('/api/dashboard', { query: { days } }).then(setD).catch((e) => notify(e.message, 'error'));
@@ -33,10 +38,10 @@ export default function Dashboard() {
           <Link href="/import" className="btn"><LuFileSpreadsheet /> Upload file & send</Link>
         </div>
         <div className="dash-stats">
-          <Stat icon={LuUsers} color="blue" label="Total Contacts" value={num(t.contacts)} note={`${num(t.active)} in a sequence now`} />
-          <Stat icon={LuSend} color="green" label="Emails Sent" value={num(t.sent)} note={`${num(t.todaySent)} / ${num(t.dailyLimit)} today`} />
-          <Stat icon={LuMailOpen} color="orange" label="Opened" value={num(t.opened)} note={`${d.rates.open}% open rate`} />
-          <Stat icon={LuReply} color="purple" label="Replied" value={num(t.replied)} note={`${d.rates.reply}% reply rate`} />
+          <Stat href="/contacts" icon={LuUsers} color="blue" label="Total Contacts" value={num(t.contacts)} note={`${num(t.active)} in a sequence now`} />
+          <Stat href="/campaigns" icon={LuSend} color="green" label="Emails Sent" value={num(t.sent)} note={`${num(t.todaySent)} / ${num(t.dailyLimit)} today`} />
+          <Stat href="/campaigns" icon={LuMailOpen} color="orange" label="Opened" value={num(t.opened)} note={`${d.rates.open}% open rate`} />
+          <Stat href="/replies" icon={LuReply} color="purple" label="Replied" value={num(t.replied)} note={`${d.rates.reply}% reply rate`} />
         </div>
       </div>
 
@@ -50,15 +55,27 @@ export default function Dashboard() {
               <option value={90}>Last 90 days</option>
             </select>
           </div>
-          <div className="dash-chart">
-            {d.chart.map((x) => (
-              <div key={x.date} className="dash-col" title={`${x.date}: ${x.sent} sent, ${x.replied} replies`}>
-                <div className="dash-bar" style={{ height: `${(x.sent / maxDay) * 100}%` }}>
-                  {x.replied > 0 && <div className="dash-bar-reply" style={{ height: `${Math.max(6, (x.replied / Math.max(1, x.sent)) * 100)}%` }} />}
-                </div>
-                {d.chart.length <= 14 && <span>{x.date.slice(8)}</span>}
-              </div>
-            ))}
+          <div className="dash-chart" onMouseLeave={() => setHover(null)}>
+            {d.chart.map((x, i) => {
+              const few = d.chart.length <= 14;
+              const showDate = few || i % (d.chart.length <= 31 ? 5 : 15) === 0 || i === d.chart.length - 1;
+              return (
+                <button type="button" key={x.date} className={`dash-col ${hover?.date === x.date ? 'on' : ''}`} onMouseEnter={() => setHover(x)} onFocus={() => setHover(x)} onClick={() => router.push('/campaigns')} aria-label={`${dayName(x.date, true)}: ${x.sent} sent, ${x.opened} opened, ${x.replied} replies`}>
+                  {few && <em className="dash-num">{x.sent ? num(x.sent) : ''}{x.replied ? <i>{x.replied} ↩</i> : null}</em>}
+                  <div className="dash-bar" style={{ height: `${(x.sent / maxDay) * 100}%` }}>
+                    {x.replied > 0 && <div className="dash-bar-reply" style={{ height: `${Math.max(6, (x.replied / Math.max(1, x.sent)) * 100)}%` }} />}
+                  </div>
+                  <span>{showDate ? dayName(x.date) : '\u00a0'}</span>
+                </button>
+              );
+            })}
+          </div>
+          <div className="dash-detail">
+            {hover ? (
+              <><b>{dayName(hover.date, true)}</b><span>{num(hover.sent)} sent</span><span>{num(hover.opened)} opened</span><span>{num(hover.replied)} {hover.replied === 1 ? 'reply' : 'replies'}</span></>
+            ) : (
+              <><b>Last {days} days</b><span>{num(d.chart.reduce((n, x) => n + x.sent, 0))} sent</span><span>{num(d.chart.reduce((n, x) => n + x.opened, 0))} opened</span><span>{num(d.chart.reduce((n, x) => n + x.replied, 0))} replies</span><small>Point at a day for its numbers</small></>
+            )}
           </div>
           <p className="small muted"><i className="dot blue" /> Sent &nbsp; <i className="dot orange" /> Replies</p>
         </div>
@@ -69,20 +86,20 @@ export default function Dashboard() {
             <p className="muted">No emails sent yet.</p>
           ) : (
             d.steps.map((s) => (
-              <div key={s.label} className="dash-step">
+              <Link key={s.label} href="/replies" className="dash-step">
                 <div className="row dash-step-top">
                   <b>{s.label}</b>
                   <span className="small muted">{num(s.replies)} replies · {num(s.sent)} sent · {s.rate}%</span>
                 </div>
                 <div className="dash-track"><div style={{ width: `${(s.replies / maxStep) * 100}%` }} /></div>
-              </div>
+              </Link>
             ))
           )}
           <div className="dash-mini">
-            <div><small>Clicked</small><b>{num(t.clicked)}</b></div>
-            <div><small>Unsubscribed</small><b>{num(t.unsubscribed)}</b></div>
-            <div><small>Bounced</small><b>{num(t.bounced)}</b></div>
-            <div><small>New replies</small><b><Link href="/replies">{num(t.unhandled)}</Link></b></div>
+            <Link href="/campaigns"><small>Clicked</small><b>{num(t.clicked)}</b></Link>
+            <Link href="/contacts?status=unsubscribed"><small>Unsubscribed</small><b>{num(t.unsubscribed)}</b></Link>
+            <Link href="/contacts?status=bounced"><small>Bounced</small><b>{num(t.bounced)}</b></Link>
+            <Link href="/replies"><small>New replies</small><b>{num(t.unhandled)}</b></Link>
           </div>
         </div>
       </div>
@@ -120,14 +137,14 @@ export default function Dashboard() {
   );
 }
 
-function Stat({ icon: Icon, color, label, value, note }) {
+function Stat({ href, icon: Icon, color, label, value, note }) {
   return (
-    <div className={`dash-stat ${color}`}>
+    <Link href={href} className={`dash-stat ${color}`}>
       <span className="dash-stat-icon"><Icon /></span>
       <span>{label}</span>
       <b>{value}</b>
       <small>{note}</small>
-    </div>
+    </Link>
   );
 }
 
@@ -135,7 +152,7 @@ const css = `
 .dash-welcome .page-title { margin-bottom: 18px; }
 .dash-welcome h1 { font-size: 30px; font-weight: 700; letter-spacing: -.03em; }
 .dash-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
-.dash-stat { position: relative; border-radius: 20px; padding: 18px; display: flex; flex-direction: column; gap: 2px; background: rgba(255,255,255,.75); border: 1px solid var(--c-100); transition: border-color .2s, box-shadow .2s, transform .2s; }
+.dash-stat { color: inherit; text-decoration: none; cursor: pointer; position: relative; border-radius: 20px; padding: 18px; display: flex; flex-direction: column; gap: 2px; background: rgba(255,255,255,.75); border: 1px solid var(--c-100); transition: border-color .2s, box-shadow .2s, transform .2s; }
 .dash-stat:hover { border-color: var(--c-200); box-shadow: 0 12px 30px rgba(50,193,223,.16); transform: translateY(-2px); }
 .dash-stat-icon { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; font-size: 19px; margin-bottom: 12px; color: var(--c-700); background: var(--c-100); transition: background .2s, color .2s; }
 .dash-stat:hover .dash-stat-icon { background: var(--c); color: #fff; }
@@ -151,18 +168,30 @@ const css = `
 .dash-head select { width: auto; }
 .dash-link { color: var(--c-700); font-weight: 600; font-size: 13.5px; }
 .dash-chart { height: 220px; display: flex; align-items: flex-end; gap: 6px; padding: 10px 0 0; border-bottom: 1px solid rgba(148,163,184,.25); margin-bottom: 10px; }
-.dash-col { flex: 1; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 4px; min-width: 0; }
-.dash-col span { font-size: 11px; color: #64748b; }
+.dash-col { flex: 1; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 4px; min-width: 0; background: none; border: 0; padding: 0; font: inherit; cursor: pointer; border-radius: 10px; }
+.dash-col span { font-size: 11px; color: #64748b; white-space: nowrap; }
+.dash-col.on { background: rgba(50,193,223,.08); }
+.dash-col.on .dash-bar { filter: brightness(1.06); box-shadow: 0 8px 20px rgba(50,193,223,.4); }
+.dash-num { font-style: normal; font-size: 11.5px; font-weight: 700; color: var(--c-700); display: flex; flex-direction: column; align-items: center; line-height: 1.2; min-height: 14px; }
+.dash-num i { font-style: normal; font-weight: 700; color: #0b6e86; font-size: 10.5px; }
+.dash-detail { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 14px; padding: 10px 12px; margin-bottom: 8px; border-radius: 12px; background: var(--c-50, #f0fbfe); border: 1px solid var(--c-100); font-size: 13.5px; min-height: 42px; }
+.dash-detail b { color: var(--text); }
+.dash-detail span { color: var(--c-700); font-weight: 600; }
+.dash-detail small { color: #64748b; margin-left: auto; font-size: 12px; }
 .dash-bar { width: 100%; max-width: 34px; min-height: 3px; background: linear-gradient(#7ad9ee, #32c1df); border-radius: 9px 9px 4px 4px; box-shadow: 0 6px 14px rgba(50,193,223,.25); display: flex; align-items: flex-end; overflow: hidden; }
 .dash-bar-reply { width: 100%; background: #0b87a5; }
 .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; vertical-align: middle; }
 .dot.blue { background: #32c1df; } .dot.orange { background: #0b87a5; }
 
-.dash-step { margin-bottom: 12px; }
+.dash-step { display: block; margin-bottom: 6px; padding: 6px 8px; border-radius: 12px; color: inherit; text-decoration: none; transition: background .15s; }
+.dash-step:hover { background: rgba(50,193,223,.08); }
 .dash-step-top { justify-content: space-between; margin-bottom: 5px; font-size: 13.5px; }
 .dash-track { height: 8px; background: var(--c-100); border-radius: 99px; overflow: hidden; }
 .dash-track div { height: 100%; min-width: 2px; background: linear-gradient(90deg, #32c1df, #6fd6ec); border-radius: 99px; }
 .dash-mini { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 16px; padding-top: 14px; border-top: 1px dashed rgba(148,163,184,.3); }
+.dash-mini > a { color: inherit; text-decoration: none; padding: 6px 8px; border-radius: 12px; transition: background .15s; }
+.dash-mini > a:hover { background: rgba(50,193,223,.08); }
+.dash-mini > a:hover b { color: var(--c-700); }
 .dash-mini small { display: block; color: #64748b; font-size: 12px; }
 .dash-mini b { font-size: 18px; }
 
