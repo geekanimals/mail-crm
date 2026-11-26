@@ -170,7 +170,7 @@ export default function LeadPage() {
 
 /** Everything that happened at this company, newest first: uploads, referrals, emails, opens, replies, bounces. Click a row to open it. */
 const when = (d) => new Date(d).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Kolkata' });
-const CHOICE_LABEL = { later: 'Future follow-up', not_interested: 'Not interested', ooo: 'Out of office', hot: 'Hot lead', nothing: 'No action', set: 'Meeting set', deal: 'Deal done', details: 'Wants more details', get_back: 'Will get back on a date', didnt_happen: "Meeting didn't happen" };
+const CHOICE_LABEL = { later: 'Future follow-up', not_interested: 'Not interested', ooo: 'Out of office', hot: 'Hot lead', nothing: 'No action', set: 'Meeting set', deal: 'Deal done', details: 'Wants more details', get_back: 'Will get back on a date', didnt_happen: "Meeting didn't happen", email: 'Email the referral', email_later: 'Email the referral on a date', by_hand: 'Handle by hand', continue: 'Continue after the email by hand', as_planned: 'Send as planned', stop: 'Stop system emails' };
 
 function Timeline({ people, activity, onOpen }) {
   const [rows, setRows] = useState(null);

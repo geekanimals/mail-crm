@@ -21,7 +21,7 @@ export const Action = model(
   'Action',
   new Schema(
     {
-      kind: { type: String, enum: ['reply', 'meeting', 'meeting_outcome', 'manual'], required: true },
+      kind: { type: String, enum: ['reply', 'meeting', 'meeting_outcome', 'manual', 'referral'], required: true },
       status: { type: String, enum: ['open', 'done', 'dismissed'], default: 'open', index: true },
       contact: { type: id, ref: 'Contact', index: true },
       company: { type: id, ref: 'Company', index: true },
@@ -72,9 +72,12 @@ export const ScheduledEmail = model(
     {
       contact: { type: id, ref: 'Contact', index: true },
       company: { type: id, ref: 'Company' },
-      kind: { type: String, enum: ['later', 'winback', 'after_meeting'], default: 'later' },
+      kind: { type: String, enum: ['later', 'winback', 'after_meeting', 'referral'], default: 'later' },
       sendAt: { type: Date, index: true },
+      subject: String, // a first email in a new thread (referral); later ones are "Re:" the thread
       body: String,
+      cc: [String], // e.g. the person who referred them
+      nextBodies: [String], // the follow-ups chosen at the same time (if there is no reply), in order
       remaining: { type: Number, default: 0 }, // more follow-ups after this one if there is no reply
       status: { type: String, enum: ['scheduled', 'held', 'sending', 'sent', 'cancelled', 'failed'], default: 'scheduled', index: true }, // held = waiting for a decision (emailed by hand)
       error: String,
@@ -90,6 +93,7 @@ export const ScheduledEmail = model(
 export const DEFAULT_TEMPLATES = [
   { key: 'checking_in', name: 'Checking in', body: 'Hi {{firstName}},\n\nYou asked us to get back to you around now, so I am checking in. Is this a good time to talk about creator campaigns for {{company}}?\n\nHappy to set up a quick 15-minute call.' },
   { key: 'more_details', name: 'Sharing more details', body: 'Hi {{firstName}},\n\nAs promised, here are more details on how our barter creator campaigns work for brands like {{company}}: creators are paid in product, so each extra creator costs a unit of stock plus our fee.\n\nWould you like a short proposal for {{company}}?' },
+  { key: 'referral_intro', name: 'Referral intro', body: 'Hi {{firstName}},\n\n{{referrer}} suggested I get in touch with you about creator campaigns for {{company}}.\n\nWe run influencer campaigns with micro and nano creators who are paid in product, so each extra creator costs a unit of stock plus our fee. We have done this for brands like PepsiCo.\n\nWould you be open to a quick 15-minute call this week?' },
   { key: 'as_discussed', name: 'As discussed in the meeting', body: 'Hi {{firstName}},\n\nThank you for your time in our meeting. Following up as discussed: please let me know how you would like to go ahead with {{company}}, and I will share the next steps.' },
 ];
 export async function actionSettings() {
@@ -300,10 +304,10 @@ export async function cancelScheduled(contactId, why) {
   return ScheduledEmail.updateMany({ contact: contactId, status: { $in: ['scheduled', 'held'] } }, { $set: { status: 'cancelled', error: why } });
 }
 
-async function schedule({ contact, kind, sendAt, body, remaining = 0, action, by }) {
+async function schedule({ contact, kind, sendAt, body, remaining = 0, action, by, subject, cc, nextBodies }) {
   if (!body?.trim()) throw Object.assign(new Error('Write or choose the message'), { status: 400 });
   if (!sendAt || Number.isNaN(new Date(sendAt).getTime())) throw Object.assign(new Error('Choose a date'), { status: 400 });
-  return ScheduledEmail.create({ contact: contact._id, company: contact.companyId, kind, sendAt: new Date(sendAt), body: body.slice(0, 20000), remaining, action, by });
+  return ScheduledEmail.create({ contact: contact._id, company: contact.companyId, kind, sendAt: new Date(sendAt), subject: subject?.slice(0, 300) || undefined, body: body.slice(0, 20000), cc: cc || [], nextBodies: (nextBodies || []).map((b) => String(b).slice(0, 20000)), remaining, action, by });
 }
 
 /* ---------------- a reply came in (called by the worker) ---------------- */
@@ -404,6 +408,41 @@ export async function suggestMeeting({ contact, company, at, timeKnown = true, s
 
 const fmt = (d) => new Date(d).toLocaleString('en-IN', { timeZone: tz(), day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
 
+/* ---------------- a referral: someone named / CC'd / replied for a new person ---------------- */
+// The new person is never emailed on their own. The admin sees who referred them and decides: email them now
+// (first email + follow-ups chosen and previewed right there), on a date, or by hand.
+export async function suggestReferral(person, referrer, { how = '', quote = '' } = {}) {
+  if (!person?._id || (await Action.exists({ kind: 'referral', contact: person._id }))) return null;
+  const a = await Action.create({
+    kind: 'referral',
+    contact: person._id,
+    company: person.companyId || referrer?.companyId,
+    quote: String(quote || '').slice(0, 2000),
+    suggestion: { type: 'referral', note: `${referrer?.name || referrer?.email || 'Someone'} ${how ? `(${how})` : 'referred them'}` },
+    decision: { referrer: referrer?._id || null, referrerName: referrer?.name || referrer?.email || '' },
+  });
+  await notify('action', person, { text: `${referrer?.name || 'Someone'} referred ${person.name || person.email}. Email them?` });
+  return a;
+}
+
+/** once: the referrals already in the CRM that were never emailed get their question too */
+export async function backfillReferrals() {
+  // a referral that was already in the CRM before it was referred may miss the mark: never auto-email them either
+  await Contact.updateMany({ source: /^Referral/i, fromReply: { $ne: true } }, { $set: { fromReply: true } });
+  const people = await Contact.find({ fromReply: true, email: { $type: 'string' }, status: 'new' }).lean();
+  let made = 0;
+  for (const p of people) {
+    if (await Action.exists({ kind: 'referral', contact: p._id })) continue;
+    if (await EmailLog.exists({ contact: p._id })) continue;
+    const name = String(p.referredBy || '').replace(/\s*\(.*\)\s*$/, '').trim();
+    const referrer = p.companyId && name ? await Contact.findOne({ companyId: p.companyId, name, _id: { $ne: p._id } }).lean() : null;
+    const how = (String(p.referredBy || '').match(/\(([^)]+)\)/) || [])[1] || '';
+    const reply = referrer ? await Reply.findOne({ contact: referrer._id }).sort({ receivedAt: -1 }).select('snippet').lean() : null;
+    if (await suggestReferral(p, referrer || { name }, { how, quote: reply?.snippet || '' })) made++;
+  }
+  return made;
+}
+
 /* ---------------- deciding ---------------- */
 // body: { choice, date, reason, body (message), more (bool), winback (bool), winbackBody, notes, at }
 export async function decide(action, body = {}, by = 'admin') {
@@ -472,6 +511,20 @@ export async function decide(action, body = {}, by = 'admin') {
         result.company = { from, to: 'hot' };
       } else await (await w()).movePipeline(contact);
     } else if (choice !== 'nothing') throw Object.assign(new Error('Choose what to do'), { status: 400 });
+  }
+
+  if (action.kind === 'referral') {
+    if (!contact?.email) throw Object.assign(new Error('This person has no email'), { status: 400 });
+    if (choice === 'email' || choice === 'email_later') {
+      if (!String(body.subject || '').trim()) throw Object.assign(new Error('Write the subject'), { status: 400 });
+      const date = choice === 'email_later' ? (body.date ? new Date(body.date) : null) : new Date();
+      if (!date || Number.isNaN(date.getTime())) throw Object.assign(new Error('Choose the date'), { status: 400 });
+      const referrer = action.decision?.referrer ? await Contact.findById(action.decision.referrer).select('email').lean() : null;
+      const nextBodies = (Array.isArray(body.nextBodies) ? body.nextBodies : []).map((b) => String(b || '')).filter((b) => b.trim()).slice(0, 3);
+      const x = await schedule({ contact, kind: 'referral', sendAt: date, subject: String(body.subject).trim(), body: body.body, cc: body.cc && referrer?.email ? [referrer.email] : [], nextBodies, remaining: nextBodies.length, action: action._id, by });
+      undo.scheduled.push(String(x._id));
+      if (choice === 'email') setImmediate(() => runScheduled().catch(() => {}));
+    } else if (choice !== 'by_hand') throw Object.assign(new Error('Choose what to do'), { status: 400 });
   }
 
   if (action.kind === 'manual') {
@@ -599,10 +652,11 @@ export async function runScheduled() {
     const W = await w();
     const { smtpReady } = await import('./config.js');
     if (!smtpReady() || (await getSetting('paused', false))) return out;
-    if (!W.inSendWindow() || !W.olderEmailsOpen()) return out; // planned follow-ups are "older" emails: from PENDING_START_HOUR
+    if (!W.inSendWindow()) return out;
     let left = config.dailyLimit - (await W.sentToday());
     if (left <= 0) return out;
-    const due = await ScheduledEmail.find({ status: 'scheduled', sendAt: { $lte: new Date() } }).sort({ sendAt: 1 }).limit(Math.min(left, 50));
+    // planned follow-ups are "older" emails (from PENDING_START_HOUR); a referral's approved emails go like a fresh upload
+    const due = await ScheduledEmail.find({ status: 'scheduled', sendAt: { $lte: new Date() }, ...(W.olderEmailsOpen() ? {} : { kind: 'referral' }) }).sort({ sendAt: 1 }).limit(Math.min(left, 50));
     for (const s of due) {
       if (left <= 0) break;
       const claimed = await ScheduledEmail.findOneAndUpdate({ _id: s._id, status: 'scheduled' }, { $set: { status: 'sending' } });
@@ -633,14 +687,14 @@ async function sendPlanned(s) {
   const prev = logs.at(-1) || null;
   const replies = await Reply.find({ contact: contact._id, messageId: { $type: 'string' } }).sort({ receivedAt: 1 }).select('messageId receivedAt').lean();
   const threadIds = [...logs, ...replies].sort((a, b) => new Date(a.sentAt || a.receivedAt) - new Date(b.sentAt || b.receivedAt)).map((x) => x.messageId).filter(Boolean);
-  const root = (logs[0]?.subject || `${contact.company || 'Geek Creative Agency'}`).replace(/^(re:\s*)+/i, '');
-  const subject = `Re: ${root}`;
+  const root = (logs[0]?.subject || s.subject || `${contact.company || 'Geek Creative Agency'}`).replace(/^(re:\s*)+/i, '');
+  const subject = logs.length ? `Re: ${root}` : s.subject || root; // a first email (referral) starts its own thread
   const W = await w();
   const trackingId = crypto.randomBytes(16).toString('hex');
   const email = buildEmail(contact, subject, s.body, trackingId, prev, { signature: !W.hasSignature(s.body) });
   let messageId;
   try {
-    messageId = await sendMail({ to: contact.email, name: contact.name, email, threadIds, unsub: unsubscribeUrl(contact) });
+    messageId = await sendMail({ to: contact.email, name: contact.name, email, threadIds, unsub: unsubscribeUrl(contact), cc: (s.cc || []).filter((x) => x && x !== contact.email) });
   } catch (e) {
     const msg = String(e.response || e.message).slice(0, 300);
     await ScheduledEmail.updateOne({ _id: s._id }, { $set: { status: e.transient ? 'scheduled' : 'failed', error: msg, ...(e.transient ? { sendAt: new Date(Date.now() + 30 * 60000) } : {}) } });
@@ -655,12 +709,13 @@ async function sendPlanned(s) {
   await Contact.updateOne({ _id: contact._id }, { $set: { lastContactedAt: now } });
   if (s.remaining > 0) {
     const { templates, moreGapDays } = await actionSettings();
-    const next = templates.find((t) => t.key === 'checking_in') || templates[0];
-    await ScheduledEmail.create({ contact: contact._id, company: contact.companyId, kind: s.kind, sendAt: W.addWorkingDays(now, moreGapDays), body: next.body, remaining: s.remaining - 1, action: s.action, by: 'CRM' });
+    const chosen = (s.nextBodies || []).filter((b) => b?.trim());
+    const next = chosen[0] || (templates.find((t) => t.key === 'checking_in') || templates[0]).body; // the follow-up chosen when it was approved
+    await ScheduledEmail.create({ contact: contact._id, company: contact.companyId, kind: s.kind, sendAt: W.addWorkingDays(now, moreGapDays), body: next, nextBodies: chosen.slice(1), remaining: s.remaining - 1, action: s.action, by: 'CRM' });
   }
   return 'sent';
 }
-export const KIND_LABEL = { later: 'Future follow-up', winback: 'Win-back email', after_meeting: 'Follow-up after the meeting' };
+export const KIND_LABEL = { later: 'Future follow-up', winback: 'Win-back email', after_meeting: 'Follow-up after the meeting', referral: 'Referral email' };
 
 /** the last planned follow-up went 7 days ago and they never replied: "later" people go back to Cold */
 async function closeNoReply() {
@@ -805,5 +860,5 @@ export async function onManualEmail(contact, me) {
 }
 
 /* ---------------- what one person may see ---------------- */
-export const mayAnswer = (req, a) => req.role === 'admin' || (req.role === 'team' && !['reply', 'manual'].includes(a.kind) && (a.assignees || []).some((u) => String(u) === String(req.account?._id)));
+export const mayAnswer = (req, a) => req.role === 'admin' || (req.role === 'team' && !['reply', 'manual', 'referral'].includes(a.kind) && (a.assignees || []).some((u) => String(u) === String(req.account?._id)));
 export { User };

@@ -67,6 +67,9 @@ router.post(
       winbackDate: b.winbackDate || undefined,
       notes: str(b.notes, 5000) || undefined,
       template: str(b.template, 40) || undefined,
+      subject: str(b.subject, 300) || undefined,
+      cc: b.cc === true,
+      nextBodies: Array.isArray(b.nextBodies) ? b.nextBodies.slice(0, 3).map((x) => str(x, 20000)) : undefined,
     };
     const out = await decide(a, body, who(req));
     res.json((await shape([out.toObject()]))[0]);

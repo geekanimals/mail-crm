@@ -9,7 +9,7 @@ import { Campaign, Company, Contact, EmailLog, Enrollment, Reply, STAGE_RANK, Su
 import { bounceReason, buildEmail, sendMail, isBadAddress, parseCc, unsubscribeUrl } from './mail.js';
 import { FOLLOW_UPS, SIGNATURE, SIGNATURE_KEY } from './templates.js';
 import { joinNewsletter, runNewsletters } from './newsletter.js';
-import { askMeetingOutcomes, checkSentFolder, classifyReply, onReply, runScheduled, suggestMeeting } from './actions.js';
+import { askMeetingOutcomes, backfillReferrals, checkSentFolder, classifyReply, onReply, runScheduled, suggestMeeting, suggestReferral } from './actions.js';
 import { syncCalendars, invitesIn } from './calendar.js';
 
 const DAY = 86400000;
@@ -640,7 +640,7 @@ async function handleMessage(client, m) {
     }
   }
   // someone else named, CC'd or replying for them -> that person joins the same company
-  await saveReferrals(contact, referralCandidates(contact, { from, fromName: env.from?.[0]?.name, cc: env.cc || [], text: said }), { ccCheck: isCcAddress })
+  await saveReferrals(contact, referralCandidates(contact, { from, fromName: env.from?.[0]?.name, cc: env.cc || [], text: said }), { ccCheck: isCcAddress, quote: said })
     .catch((e) => console.error('[referrals]', e.message));
   return true;
 }
@@ -739,7 +739,7 @@ export function referralCandidates(contact, { from = '', fromName = '', cc = [],
   return [...out.values()];
 }
 /** add them to the referrer's company (or link an existing contact to it); never put in automatic emails */
-export async function saveReferrals(contact, people, { ccCheck } = {}) {
+export async function saveReferrals(contact, people, { ccCheck, quote = '' } = {}) {
   let added = 0;
   for (const p of people) {
     if (ccCheck && (await ccCheck(p.email))) continue; // our own CC people
@@ -747,9 +747,14 @@ export async function saveReferrals(contact, people, { ccCheck } = {}) {
     const existing = await Contact.findOne({ email: p.email });
     if (existing) {
       const set = {};
+      if (!existing.fromReply && existing.status === 'new') set.fromReply = true; // a referral is never auto-emailed (the admin decides in Needs you)
       if (!existing.companyId && contact.companyId) Object.assign(set, { companyId: contact.companyId, company: contact.company || existing.company });
       if (!existing.referredBy) set.referredBy = by;
       if (Object.keys(set).length) await Contact.updateOne({ _id: existing._id }, { $set: set });
+      // already in the CRM but never emailed: the admin decides in Needs you too
+      if (existing.status === 'new' && !(await EmailLog.exists({ contact: existing._id }))) {
+        await suggestReferral({ ...existing.toObject(), ...set }, contact, { how: p.how, quote }).catch((e) => console.error('[referral]', e.message));
+      }
       continue;
     }
     const c = await Contact.create({
@@ -757,6 +762,8 @@ export async function saveReferrals(contact, people, { ccCheck } = {}) {
       referredBy: by, source: 'Referral (from a reply)', fromReply: true, status: 'new',
     });
     await notify('referral', c, { text: `${contact.name || contact.email} brought in ${p.name || p.email}${contact.company ? ` · ${contact.company}` : ''}` }).catch(() => {});
+    // Needs you: email them? (first email + follow-ups chosen and previewed by the admin)
+    await suggestReferral(c, contact, { how: p.how, quote }).catch((e) => console.error('[referral]', e.message));
     added++;
   }
   return added;
@@ -821,6 +828,10 @@ export function startWorker() {
   setTimeout(() => syncCalendars().catch((e) => console.error('[calendar]', e.message)), 30000);
   setTimeout(async () => {
     try {
+      if ((await getSetting('referral_actions_v', 0)) < 2) {
+        console.log('[referrals] questions made for earlier referrals:', await backfillReferrals());
+        await setSetting('referral_actions_v', 2);
+      }
       if ((await getSetting('company_sheet_fill_v', 0)) < 1) {
         await fillCompaniesFromSheets();
         await setSetting('company_sheet_fill_v', 1);

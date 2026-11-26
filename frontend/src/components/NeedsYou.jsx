@@ -26,15 +26,22 @@ const isLate = (a) => new Date().getTime() - new Date(a.createdAt).getTime() > 2
 const fromDate = (v) => (v ? `${v}T11:00:00${TZ}` : undefined);
 const fromDateTime = (v) => (v ? `${v}:00${TZ}` : undefined);
 const firstName = (n) => String(n || '').trim().split(/\s+/)[0] || 'there';
-const fill = (body, a) => String(body || '').replace(/\{\{\s*firstName\s*\}\}/g, firstName(a.contact?.name)).replace(/\{\{\s*company\s*\}\}/g, a.company?.name || 'your brand');
+const referrerOf = (a) => firstName(a.decision?.referrerName || '') === 'there' ? 'A colleague' : String(a.decision?.referrerName || '').trim();
+const fill = (body, a) => String(body || '').replace(/\{\{\s*firstName\s*\}\}/g, firstName(a.contact?.name)).replace(/\{\{\s*company\s*\}\}/g, a.company?.name || 'your brand').replace(/\{\{\s*referrer\s*\}\}/g, referrerOf(a));
+const REFERRAL_FOLLOW_UPS = [
+  'Hi {{firstName}},\n\nFollowing up on my note. {{referrer}} thought this could be useful for {{company}}, so I wanted to make sure it reached you.\n\nWould a quick 15-minute call work this week?',
+  'Hi {{firstName}},\n\nOne last note from my side. If creator campaigns are not a priority for {{company}} right now, no problem at all. If they are, I am happy to share a short plan.',
+];
+const REFERRAL_INTRO = { key: 'referral_intro', name: 'Referral intro', body: 'Hi {{firstName}},\n\n{{referrer}} suggested I get in touch with you about creator campaigns for {{company}}.\n\nWe run influencer campaigns with micro and nano creators who are paid in product, so each extra creator costs a unit of stock plus our fee. We have done this for brands like PepsiCo.\n\nWould you be open to a quick 15-minute call this week?' };
 
-const KIND = { reply: 'Reply', meeting: 'Meeting found', meeting_outcome: 'How was the meeting?', manual: 'Emailed by hand' };
-const SUGGEST = { later: 'Future follow-up', not_interested: 'Not interested', ooo: 'Out of office', hot: 'Hot lead', meeting: 'Set the meeting', outcome: '', manual: 'Move the next system email to' };
+const KIND = { reply: 'Reply', meeting: 'Meeting found', meeting_outcome: 'How was the meeting?', manual: 'Emailed by hand', referral: 'Referral' };
+const SUGGEST = { later: 'Future follow-up', not_interested: 'Not interested', ooo: 'Out of office', hot: 'Hot lead', meeting: 'Set the meeting', outcome: '', manual: 'Move the next system email to', referral: 'Email them' };
 const REASONS = [['budget', 'No budget'], ['agency', 'Has an agency / in-house team'], ['not_relevant', 'Not relevant'], ['other', 'Other']];
 const CHOICES = {
   reply: [['later', 'Future follow-up'], ['not_interested', 'Not interested'], ['ooo', 'Out of office'], ['hot', 'Hot lead (interested)'], ['nothing', 'Do nothing']],
   meeting: [['set', 'Set the meeting'], ['nothing', 'Not a meeting']],
   manual: [['continue', 'Continue after that'], ['as_planned', 'Send as planned'], ['stop', 'Stop system emails']],
+  referral: [['email', 'Email them now'], ['email_later', 'Email on a date'], ['by_hand', "I'll handle it by hand"]],
   meeting_outcome: [['deal', 'Deal done'], ['details', 'Wants more details'], ['get_back', 'Will get back on a date'], ['later', 'Follow up later'], ['not_interested', 'Not interested'], ['didnt_happen', "Didn't happen"]],
 };
 
@@ -74,14 +81,20 @@ function MessagePicker({ a, templates, value, onChange, label = 'Message' }) {
 
 function ActionCard({ a, settings, onDone, admin = true }) {
   const s = a.suggestion || {};
-  const sug = a.kind === 'reply' ? (['later', 'not_interested', 'ooo', 'hot'].includes(s.type) ? s.type : 'hot') : a.kind === 'meeting' ? 'set' : a.kind === 'manual' ? 'continue' : '';
+  const sug = a.kind === 'reply' ? (['later', 'not_interested', 'ooo', 'hot'].includes(s.type) ? s.type : 'hot') : a.kind === 'meeting' ? 'set' : a.kind === 'manual' ? 'continue' : a.kind === 'referral' ? 'email' : '';
   const [choice, setChoice] = useState(sug);
   const [f, setF] = useState(() => ({
     date: ymd(s.date || (s.type === 'later' ? plusMonths(settings.laterMonths) : null)),
     at: ymdhm(s.date),
     reason: s.reason || 'other',
     more: true,
-    msg: startMsg(settings.templates, a, a.kind === 'meeting_outcome' ? 'as_discussed' : 'checking_in'),
+    msg: a.kind === 'referral' ? startMsg(settings.templates.some((t) => t.key === 'referral_intro') ? settings.templates : [REFERRAL_INTRO, ...settings.templates], a, 'referral_intro') : startMsg(settings.templates, a, a.kind === 'meeting_outcome' ? 'as_discussed' : 'checking_in'),
+    subject: a.kind === 'referral' ? `${firstName(referrerOf(a))} suggested I get in touch` : '',
+    cc: true,
+    follow: true,
+    nextBodies: a.kind === 'referral'
+      ? REFERRAL_FOLLOW_UPS.map((b) => fill(b, a))
+      : ['checking_in', 'more_details'].map((k) => startMsg(settings.templates, a, k).body),
     winback: false,
     winbackDate: ymd(plusMonths(settings.winbackMonths)),
     winMsg: startMsg(settings.templates, a, 'checking_in'),
@@ -110,6 +123,15 @@ function ActionCard({ a, settings, onDone, admin = true }) {
       if (f.winback) {
         if (!f.winMsg.body?.trim()) return notify('Choose or write the win-back message', 'error');
         Object.assign(body, { winback: true, winbackDate: fromDate(f.winbackDate), winbackBody: f.winMsg.body });
+      }
+    }
+    if (choice === 'email' || choice === 'email_later') {
+      if (!f.subject.trim()) return notify('Write the subject', 'error');
+      if (!f.msg.body?.trim()) return notify('Choose or write the first email', 'error');
+      Object.assign(body, { subject: f.subject.trim(), body: f.msg.body, template: f.msg.template, cc: f.cc, nextBodies: f.follow ? f.nextBodies.filter((x) => x.trim()) : [] });
+      if (choice === 'email_later') {
+        if (!f.date) return notify('Choose the date', 'error');
+        body.date = fromDate(f.date);
       }
     }
     if (choice === 'ooo' || choice === 'continue') body.date = fromDate(f.date);
@@ -207,6 +229,22 @@ function ActionCard({ a, settings, onDone, admin = true }) {
           <p className="ny-hint">The email written by hand counts. The system emails carry on from this date.</p>
         </div>
       )}
+      {(choice === 'email' || choice === 'email_later') && (
+        <div className="ny-form">
+          {choice === 'email_later' && <label className="ny-field">Send on <input type="date" value={f.date} min={ymd(new Date())} onChange={(e) => set({ date: e.target.value })} /></label>}
+          <label className="ny-field ny-wide">Subject <input value={f.subject} maxLength={300} onChange={(e) => set({ subject: e.target.value })} /></label>
+          <MessagePicker a={a} templates={settings.templates.some((t) => t.key === 'referral_intro') ? settings.templates : [REFERRAL_INTRO, ...settings.templates]} value={f.msg} onChange={(msg) => set({ msg })} label="First email" />
+          {a.decision?.referrerName && <label className="ny-inline"><input type="checkbox" checked={f.cc} onChange={(e) => set({ cc: e.target.checked })} /> CC {a.decision.referrerName} (who referred them)</label>}
+          <label className="ny-inline"><input type="checkbox" checked={f.follow} onChange={(e) => set({ follow: e.target.checked })} /> If there is no reply, send these follow-ups ({settings.moreGapDays} working days apart), then stop</label>
+          {f.follow && f.nextBodies.map((b, i) => (
+            <label key={i} className="ny-field ny-wide">Follow-up {i + 1}
+              <textarea rows={5} value={b} onChange={(e) => set({ nextBodies: f.nextBodies.map((x, j) => (j === i ? e.target.value : x)) })} />
+            </label>
+          ))}
+          <p className="ny-hint">{choice === 'email' ? 'The first email goes right away (inside sending hours and the daily limit).' : 'Nothing is sent before that date.'} Every email shown here is exactly what goes out.</p>
+        </div>
+      )}
+      {choice === 'by_hand' && <p className="ny-hint">No system email to {a.contact?.name || 'this person'}. You write to them yourself.</p>}
       {choice === 'as_planned' && <p className="ny-hint">The system emails go on their old dates, as if nothing was sent by hand.</p>}
       {choice === 'stop' && <p className="ny-hint">No more system emails to {a.contact?.name || 'this person'}. You carry on by hand.</p>}
       {choice === 'hot' && <p className="ny-hint">Moves to <b>Hot lead</b> and the meeting task goes to its owner, like any reply.</p>}
