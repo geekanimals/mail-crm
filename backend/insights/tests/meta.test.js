@@ -57,6 +57,18 @@ test("Instagram week: every metric read, a retired metric is skipped, not fatal"
   assert.ok(r.notes.some((n) => n.startsWith("saves")));
 });
 
+test("Instagram week: a negative net number from Meta (saves -16) is saved as 0, not an error", async () => {
+  fakeMeta({
+    views: { data: [{ total_value: { value: 900 } }] },
+    saves: { data: [{ total_value: { value: -16 } }] },
+    posts: { data: [] },
+  });
+  const r = await instagramWeek("1789", "tok", { start: "2026-11-16", end: "2026-11-22" });
+  assert.equal(r.values.saves, 0);
+  assert.equal(r.values.views, 900);
+  assert.ok(r.notes.some((n) => n.startsWith("saves: Meta sent -16")));
+});
+
 test("Facebook week: renamed Page metrics fall back to the next name", async () => {
   const day = (v) => ({ data: [{ values: v.map((value) => ({ value })) }] });
   fakeMeta({

@@ -17,6 +17,17 @@ async function tryMetric(fn, notes, label) {
   }
 }
 
+// Meta sometimes sends net numbers below zero (e.g. saves minus unsaves). Our weeks store counts, so those become 0.
+function noNegatives(values, notes) {
+  for (const [k, v] of Object.entries(values)) {
+    if (typeof v === "number" && v < 0) {
+      notes.push(`${k}: Meta sent ${v} (net change), saved as 0`);
+      values[k] = 0;
+    }
+  }
+  return values;
+}
+
 async function countPosts(url, params, start, end) {
   let n = 0;
   let next = url;
@@ -79,7 +90,7 @@ export async function instagramWeek(igId, token, { start, end }) {
   }
 
   if (!Object.keys(values).length) throw new MetaError("Meta returned no numbers for this week" + (notes.length ? ` (${notes[0]})` : ""));
-  return { values, notes };
+  return { values: noNegatives(values, notes), notes };
 }
 
 // ---------- Facebook Page (graph.facebook.com, Page token) ----------
@@ -122,5 +133,5 @@ export async function facebookWeek(pageId, token, { start, end }) {
   }
 
   if (!Object.keys(values).length) throw new MetaError("Meta returned no numbers for this week" + (notes.length ? ` (${notes[0]})` : ""));
-  return { values, notes };
+  return { values: noNegatives(values, notes), notes };
 }
