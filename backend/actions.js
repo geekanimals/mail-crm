@@ -26,6 +26,7 @@ export const Action = model(
       contact: { type: id, ref: 'Contact', index: true },
       company: { type: id, ref: 'Company', index: true },
       reply: { type: id, ref: 'Reply' },
+      emailAt: Date, // when the email this card is about was sent / received (shown on the card)
       meeting: { type: id, ref: 'Meeting' },
       quote: { type: String, default: '' }, // what they wrote (new text only)
       suggestion: {
@@ -350,7 +351,7 @@ export async function onReply(contact, verdict, { reply, quote, at }) {
 }
 
 /** a meeting found in an email (text or invite) or the calendar: suggest it, or update the suggestion / meeting already there */
-export async function suggestMeeting({ contact, company, at, timeKnown = true, source, quote = '', reply, calendarUid, title, cancelled = false }) {
+export async function suggestMeeting({ contact, company, at, timeKnown = true, source, quote = '', reply, calendarUid, title, cancelled = false, emailAt }) {
   const companyId = company || contact?.companyId;
   if (!companyId || !at) return null;
   const near = (a, b) => Math.abs(new Date(a) - new Date(b)) <= 30 * 60000;
@@ -412,6 +413,7 @@ export async function suggestMeeting({ contact, company, at, timeKnown = true, s
     contact: contact?._id,
     company: companyId,
     reply: reply?._id,
+    emailAt: emailAt || reply?.receivedAt || undefined,
     quote: String(quote || title || '').slice(0, 2000),
     suggestion: { type: 'meeting', date: at, sources: [source], check: source === 'email' && !timeKnown, note: source === 'email' && !timeKnown ? 'No time in the email: check the time.' : '' },
     assignees: owner ? [owner] : [],
@@ -884,7 +886,7 @@ export async function readManualEmail(contact, me, files = []) {
   const text = `${me.subject || ''}\n${me.snippet || ''}`;
   const t = findMeetingTime(text, new Date(me.sentAt));
   if (t && (MEET_LINK.test(text) || /\b(meeting|call|meet|zoom|discuss|connect|catch up)\b/i.test(text))) {
-    await suggestMeeting({ contact, at: t.at, timeKnown: t.timeKnown, source: 'email', quote: `Sent by hand: ${text}`.slice(0, 1500) });
+    await suggestMeeting({ contact, at: t.at, timeKnown: t.timeKnown, source: 'email', quote: `Sent by hand: ${text}`.slice(0, 1500), emailAt: me.sentAt });
   }
   const estimateFile = files.find((f) => ESTIMATE_RX.test(f));
   if ((ESTIMATE_RX.test(me.subject || '') || estimateFile) && contact.companyId) {
@@ -894,6 +896,7 @@ export async function readManualEmail(contact, me, files = []) {
         kind: 'estimate',
         contact: contact._id,
         company: c._id,
+        emailAt: me.sentAt,
         quote: `Subject: ${me.subject || ''}${files.length ? `\nAttached: ${files.join(', ')}` : ''}\n\n${me.snippet || ''}`.slice(0, 2000),
         suggestion: { type: 'estimate', date: me.sentAt, note: `An estimate / proposal seems to have been sent by hand on ${fmt(me.sentAt)}` },
       });
@@ -912,7 +915,9 @@ export async function onManualEmail(contact, me) {
   const W = await w();
   const next = [...enr.map((e) => e.nextSendAt), ...sch.map((s) => s.sendAt)].filter(Boolean).map((d) => new Date(d)).sort((a, b) => a - b)[0];
   const after = W.addWorkingDays(new Date(me.sentAt), config.intervalDays || 3);
-  const date = next && next > after ? next : after;
+  // the planned email is already on (or after) that day: keep it as it is; else move it to 3 working days after the email by hand
+  const dayIst = (d) => new Intl.DateTimeFormat('en-CA', { timeZone: config.timezone }).format(d);
+  const date = next && dayIst(next) >= dayIst(after) ? next : after;
   // hold now, so nothing goes twice while waiting for a decision
   await Enrollment.updateMany({ _id: { $in: enr.map((e) => e._id) } }, { $set: { paused: true } });
   await ScheduledEmail.updateMany({ _id: { $in: sch.map((s) => s._id) } }, { $set: { status: 'held' } });
@@ -921,13 +926,14 @@ export async function onManualEmail(contact, me) {
   const quote = [me.subject ? `Subject: ${me.subject}` : '', me.snippet].filter(Boolean).join('\n\n');
   if (open) {
     open.quote = quote;
+    open.emailAt = me.sentAt;
     open.suggestion = { type: 'manual', date, note: `Emailed by hand on ${fmt(me.sentAt)}` };
     open.decision = { ...(open.decision || {}), held };
     open.markModified('decision');
     await open.save();
     return open;
   }
-  const a = await Action.create({ kind: 'manual', contact: contact._id, company: contact.companyId, quote, suggestion: { type: 'manual', date, note: `Emailed by hand on ${fmt(me.sentAt)}${next ? ` · the next system email was due ${fmt(next)}` : ''}` }, decision: { held } });
+  const a = await Action.create({ kind: 'manual', contact: contact._id, company: contact.companyId, emailAt: me.sentAt, quote, suggestion: { type: 'manual', date, note: `Emailed by hand on ${fmt(me.sentAt)}${next ? ` · the next system email was due ${fmt(next)}` : ''}` }, decision: { held } });
   await notify('action', contact, { text: `Emailed by hand: the next system email is on hold until you decide` });
   return a;
 }

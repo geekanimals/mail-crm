@@ -16,8 +16,25 @@ async function shape(list) {
   const companies = new Map((await Company.find({ _id: { $in: list.map((a) => a.company).filter(Boolean) } }).select('name stage').lean()).map((c) => [String(c._id), c]));
   const meetings = new Map((await Meeting.find({ _id: { $in: list.map((a) => a.meeting).filter(Boolean) } }).lean()).map((m) => [String(m._id), m]));
   const replies = new Map((await Reply.find({ _id: { $in: list.map((a) => a.reply).filter(Boolean) } }).select('subject from receivedAt').lean()).map((r) => [String(r._id), r]));
+  // cards made before emailAt existed: the email's own time, from the email by hand / the referrer's reply
+  const emailAt = new Map();
+  for (const a of list) {
+    if (a.emailAt) continue;
+    const fromMail = a.kind === 'meeting' && (a.suggestion?.sources || []).includes('email');
+    if ((['manual', 'estimate'].includes(a.kind) || (fromMail && /^Sent by hand/.test(a.quote || ''))) && a.contact) {
+      const me = await ManualEmail.findOne({ contact: a.contact, sentAt: { $lte: new Date(a.createdAt) } }).sort({ sentAt: -1 }).select('sentAt').lean();
+      if (me) emailAt.set(String(a._id), me.sentAt);
+    } else if (fromMail && a.contact) {
+      const r = await Reply.findOne({ contact: a.contact, receivedAt: { $lte: new Date(a.createdAt) } }).sort({ receivedAt: -1 }).select('receivedAt').lean();
+      if (r) emailAt.set(String(a._id), r.receivedAt);
+    } else if (a.kind === 'referral' && a.decision?.referrer) {
+      const r = await Reply.findOne({ contact: a.decision.referrer, receivedAt: { $lte: new Date(a.createdAt) } }).sort({ receivedAt: -1 }).select('receivedAt').lean();
+      if (r) emailAt.set(String(a._id), r.receivedAt);
+    }
+  }
   return list.map((a) => ({
     ...a,
+    emailAt: a.emailAt || emailAt.get(String(a._id)) || replies.get(String(a.reply))?.receivedAt || null,
     contact: contacts.get(String(a.contact)) || null,
     company: companies.get(String(a.company)) || null,
     meeting: meetings.get(String(a.meeting)) || null,

@@ -10,6 +10,8 @@ import { api, date, leadHref, notify } from '@/lib/api';
 const TZ = '+05:30'; // the CRM works in India time
 const day = (d) => (d ? new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' }) : '');
 const dayTime = (d) => (d ? new Date(d).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Kolkata' }) : '');
+/** "2026-12-01" -> "Tue, 1 December 2026" (shown beside every date box, so 01/12 is never read as 12 January) */
+const inWords = (v) => (v ? new Date(`${v}T12:00:00+05:30`).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Kolkata' }) : '');
 const ymd = (d) => (d ? new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date(d)) : '');
 const ymdhm = (d) => {
   if (!d) return '';
@@ -86,7 +88,10 @@ function MessagePicker({ a, templates, value, onChange, label = 'Message' }) {
 
 function ActionCard({ a, settings, onDone, admin = true }) {
   const s = a.suggestion || {};
-  const sug = a.kind === 'reply' ? (['later', 'not_interested', 'ooo', 'hot'].includes(s.type) ? s.type : 'hot') : a.kind === 'meeting' ? (s.type === 'meeting_cancel' ? 'cancel' : 'set') : a.kind === 'manual' ? 'continue' : a.kind === 'referral' ? 'email' : a.kind === 'estimate' ? 'opportunity' : '';
+  // emailed by hand: is the next system email already on (or after) the day the CRM would move it to?
+  const nextDue = a.kind === 'manual' ? a.decision?.held?.next : null;
+  const asPlanned = Boolean(a.kind === 'manual' && nextDue && s.date && ymd(s.date) <= ymd(nextDue));
+  const sug = a.kind === 'manual' && asPlanned ? 'as_planned' : a.kind === 'reply' ? (['later', 'not_interested', 'ooo', 'hot'].includes(s.type) ? s.type : 'hot') : a.kind === 'meeting' ? (s.type === 'meeting_cancel' ? 'cancel' : 'set') : a.kind === 'manual' ? 'continue' : a.kind === 'referral' ? 'email' : a.kind === 'estimate' ? 'opportunity' : '';
   const [choice, setChoice] = useState(sug);
   const [f, setF] = useState(() => ({
     date: ymd(s.date || (s.type === 'later' ? plusMonths(settings.laterMonths) : null)),
@@ -168,17 +173,28 @@ function ActionCard({ a, settings, onDone, admin = true }) {
       <div className="ny-top">
         <span className={`ny-kind k-${a.kind}`}>{a.kind === 'reply' ? <LuReply /> : <LuCalendarClock />} {KIND[a.kind]}</span>
         <b className="ny-who">{who}{a.company && a.contact ? <> · {admin ? <Link href={`/lead?company=${a.company._id}`}>{a.company.name}</Link> : a.company.name}</> : null}</b>
-        <small className="muted">{late ? 'Waiting for 2+ days · ' : ''}{dayTime(a.createdAt)}</small>
+        <small className="muted">{late ? 'Waiting for 2+ days · ' : ''}{a.emailAt ? `${['manual', 'estimate'].includes(a.kind) || /^Sent by hand/.test(a.quote || '') ? 'Sent' : 'Received'} ${dayTime(a.emailAt)}` : dayTime(a.createdAt)}</small>
       </div>
       {a.kind === 'meeting_outcome' && <p className="ny-line">Meeting on <b>{dayTime(a.meeting?.at || s.date)}</b>{a.meeting?.sources?.length ? ` · from ${a.meeting.sources.join(' + ')}` : ''}</p>}
       {a.quote && <blockquote className="ny-quote">{a.quote}</blockquote>}
       {a.kind !== 'meeting_outcome' && (
         <p className="ny-suggest">
-          <b>Suggested: {SUGGEST[s.type]}</b>
-          {s.date && s.type !== 'not_interested' ? ` · ${s.type === 'meeting' ? dayTime(s.date) : day(s.date)}` : ''}
+          {a.kind === 'manual' ? (
+            <b>
+              Suggested:{' '}
+              {asPlanned
+                ? `Send the next system email as planned, on ${dayTime(nextDue)}`
+                : nextDue
+                  ? `Move the next system email from ${dayTime(nextDue)} to ${dayTime(s.date)}`
+                  : `Next system email on ${dayTime(s.date)}`}
+            </b>
+          ) : (
+            <b>Suggested: {SUGGEST[s.type]}</b>
+          )}
+          {a.kind !== 'manual' && s.date && s.type !== 'not_interested' ? ` · ${s.type === 'meeting' ? dayTime(s.date) : day(s.date)}` : ''}
           {s.type === 'not_interested' && s.reason ? ` · ${REASONS.find((r) => r[0] === s.reason)?.[1] || ''}` : ''}
           {s.sources?.length ? ` · from ${s.sources.join(' + ')}` : ''}
-          {s.note && <span className={`ny-note ${s.check ? 'warn' : ''}`}>{s.note}</span>}
+          {s.note && <span className={`ny-note ${s.check ? 'warn' : ''}`}>{a.kind === 'manual' ? `${s.note.split(' · ')[0]} · the CRM waits at least 3 working days after an email by hand` : s.note}</span>}
           {s.check && !s.note && <span className="ny-note warn">Not sure: check this.</span>}
         </p>
       )}
@@ -201,7 +217,7 @@ function ActionCard({ a, settings, onDone, admin = true }) {
       )}
       {needsMsg && (
         <div className="ny-form">
-          <label className="ny-field">{choice === 'get_back' ? 'They will get back on' : 'Follow up on'} <input type="date" value={f.date} min={ymd(new Date())} onChange={(e) => set({ date: e.target.value })} /></label>
+          <label className="ny-field">{choice === 'get_back' ? 'They will get back on' : 'Follow up on'} <input type="date" value={f.date} min={ymd(new Date())} onChange={(e) => set({ date: e.target.value })} />{f.date && <small className="ny-inwords">{inWords(f.date)}</small>}</label>
           <MessagePicker a={a} templates={settings.templates} value={f.msg} onChange={(msg) => set({ msg })} />
           {choice !== 'details' && <label className="ny-inline"><input type="checkbox" checked={f.more} onChange={(e) => set({ more: e.target.checked })} /> If there is no reply, send 2 more follow-ups ({settings.moreGapDays} working days apart), then stop</label>}
           <p className="ny-hint">Nothing is sent before {f.date ? day(fromDate(f.date)) : 'that date'}. You can change or cancel it under Planned follow-ups.</p>
@@ -216,7 +232,7 @@ function ActionCard({ a, settings, onDone, admin = true }) {
           <label className="ny-inline"><input type="checkbox" checked={f.winback} onChange={(e) => set({ winback: e.target.checked })} /> Try again later with one email</label>
           {f.winback && (
             <>
-              <label className="ny-field">Send on <input type="date" value={f.winbackDate} min={ymd(new Date())} onChange={(e) => set({ winbackDate: e.target.value })} /></label>
+              <label className="ny-field">Send on <input type="date" value={f.winbackDate} min={ymd(new Date())} onChange={(e) => set({ winbackDate: e.target.value })} />{f.winbackDate && <small className="ny-inwords">{inWords(f.winbackDate)}</small>}</label>
               <MessagePicker a={a} templates={settings.templates} value={f.winMsg} onChange={(winMsg) => set({ winMsg })} label="Win-back message" />
             </>
           )}
@@ -224,19 +240,19 @@ function ActionCard({ a, settings, onDone, admin = true }) {
       )}
       {choice === 'ooo' && (
         <div className="ny-form">
-          <label className="ny-field">Back on <input type="date" value={f.date} onChange={(e) => set({ date: e.target.value })} /></label>
+          <label className="ny-field">Back on <input type="date" value={f.date} onChange={(e) => set({ date: e.target.value })} />{f.date && <small className="ny-inwords">{inWords(f.date)}</small>}</label>
           <p className="ny-hint">The follow-ups stop until then and start again from where they were.</p>
         </div>
       )}
       {choice === 'continue' && (
         <div className="ny-form">
-          <label className="ny-field">Next system email on <input type="date" value={f.date} min={ymd(new Date())} onChange={(e) => set({ date: e.target.value })} /></label>
-          <p className="ny-hint">The email written by hand counts. The system emails carry on from this date.</p>
+          <label className="ny-field">Next system email on <input type="date" value={f.date} min={ymd(new Date())} onChange={(e) => set({ date: e.target.value })} />{f.date && <small className="ny-inwords">{inWords(f.date)}</small>}</label>
+          <p className="ny-hint">The email written by hand counts. The system emails carry on from this date{nextDue ? ` (it was ${dayTime(nextDue)})` : ''}.</p>
         </div>
       )}
       {(choice === 'email' || choice === 'email_later') && (
         <div className="ny-form">
-          {choice === 'email_later' && <label className="ny-field">Send on <input type="date" value={f.date} min={ymd(new Date())} onChange={(e) => set({ date: e.target.value })} /></label>}
+          {choice === 'email_later' && <label className="ny-field">Send on <input type="date" value={f.date} min={ymd(new Date())} onChange={(e) => set({ date: e.target.value })} />{f.date && <small className="ny-inwords">{inWords(f.date)}</small>}</label>}
           <label className="ny-field ny-wide">Subject <input value={f.subject} maxLength={300} onChange={(e) => set({ subject: e.target.value })} /></label>
           <MessagePicker a={a} templates={settings.templates.some((t) => t.key === 'referral_intro') ? settings.templates : [REFERRAL_INTRO, ...settings.templates]} value={f.msg} onChange={(msg) => set({ msg })} label="First email" />
           {a.decision?.referrerName && <label className="ny-inline"><input type="checkbox" checked={f.cc} onChange={(e) => set({ cc: e.target.checked })} /> CC {a.decision.referrerName} (who referred them)</label>}
@@ -250,7 +266,7 @@ function ActionCard({ a, settings, onDone, admin = true }) {
         </div>
       )}
       {choice === 'by_hand' && <p className="ny-hint">No system email to {a.contact?.name || 'this person'}. You write to them yourself.</p>}
-      {choice === 'as_planned' && <p className="ny-hint">The system emails go on their old dates, as if nothing was sent by hand.</p>}
+      {choice === 'as_planned' && <p className="ny-hint">{nextDue ? `The next system email goes on ${dayTime(nextDue)}` : 'The system emails go on their old dates'}{asPlanned ? ', already 3 working days or more after the email by hand.' : ', as if nothing was sent by hand.'}</p>}
       {choice === 'stop' && <p className="ny-hint">No more system emails to {a.contact?.name || 'this person'}. You carry on by hand.</p>}
       {choice === 'hot' && <p className="ny-hint">Moves to <b>Hot lead</b> and the meeting task goes to its owner, like any reply.</p>}
       {(choice === 'set' || choice === 'didnt_happen') && (
@@ -306,7 +322,7 @@ function Scheduled() {
           </div>
           {edit?._id === s._id ? (
             <div className="ny-form">
-              <label className="ny-field">Send on <input type="date" value={edit.date} min={ymd(new Date())} onChange={(e) => setEdit({ ...edit, date: e.target.value })} /></label>
+              <label className="ny-field">Send on <input type="date" value={edit.date} min={ymd(new Date())} onChange={(e) => setEdit({ ...edit, date: e.target.value })} />{edit.date && <small className="ny-inwords">{inWords(edit.date)}</small>}</label>
               <textarea rows={6} value={edit.body} onChange={(e) => setEdit({ ...edit, body: e.target.value })} />
               <div className="ny-bar"><button className="btn sm" onClick={save}>Save</button><button className="btn ghost sm" onClick={() => setEdit(null)}>Cancel</button></div>
             </div>
@@ -416,6 +432,7 @@ const css = `
 .ny-choices button.sug { border-style: dashed; border-color: #7dd3e8; }
 .ny-choices button.on { background: #0b87a5; border-color: #0b87a5; color: #fff; }
 .ny-form { display: flex; flex-direction: column; gap: 10px; background: #f8fafc; border-radius: 14px; padding: 12px; }
+.ny-inwords { display: block; margin-top: 4px; font-size: 12.5px; font-weight: 600; color: #0b87a5; }
 .ny-field { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; font-weight: 600; color: #475569; max-width: 320px; }
 .ny-field.ny-wide { max-width: none; }
 .ny-field input, .ny-field select, .ny-field textarea { font: inherit; font-weight: 400; }
