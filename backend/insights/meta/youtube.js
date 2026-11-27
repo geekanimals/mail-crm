@@ -112,6 +112,7 @@ export async function youtubeWeek(channelId, token, { start, end }) {
     values.likes = get("likes");
     values.comments = get("comments");
     values.shares = get("shares");
+    values.interactions = (values.likes || 0) + (values.comments || 0) + (values.shares || 0); // YouTube has no single total
     const net = (get("subscribersGained") || 0) - (get("subscribersLost") || 0);
     if (net < 0) notes.push(`subscribers: ${net} this week (more left than joined), saved as 0`);
     values.newFollowers = Math.max(0, net);

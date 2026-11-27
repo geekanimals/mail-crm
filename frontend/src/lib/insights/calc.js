@@ -4,25 +4,51 @@ import { METRICS, METRIC_KEYS } from "./constants";
 
 const zero = () => Object.fromEntries(METRIC_KEYS.map((k) => [k, 0]));
 
-// Fill missing fields so old/partial rows never break the charts
+// Fill missing fields so old/partial rows never break the charts.
+// Interactions: Meta gives one total; where a platform/file has none (YouTube, LinkedIn, X), it is
+// likes + comments + shares + saves of that row, so every platform has an Interactions number.
 export function normalize(r) {
-  return { ...zero(), ...r, end: r.end || r.week };
+  const row = { ...zero(), ...r, end: r.end || r.week };
+  if (!row.interactions) {
+    const acted = (Number(row.likes) || 0) + (Number(row.comments) || 0) + (Number(row.shares) || 0) + (Number(row.saves) || 0);
+    if (acted) (row.interactions = acted), (row.interactionsAdded = true);
+  }
+  return row;
 }
 
 // Total followers never drop to zero for real. When an entry was saved without them (e.g. a video-only
 // export), use the last known total for that account + platform so charts don't show a false −100%.
+// Weeks before the first known total are worked out backwards: total at the end of the week before =
+// this week's total − this week's new followers (so week-vs-week shows "was X, now Y, +Z").
 export function fillFollowers(rows) {
+  const sorted = [...rows].sort((a, b) => a.week.localeCompare(b.week));
   const last = {};
-  return [...rows]
-    .sort((a, b) => a.week.localeCompare(b.week))
-    .map((r) => {
-      const k = r.account + "|" + r.platform;
-      if (r.followers > 0) {
-        last[k] = r.followers;
-        return r;
+  const forward = sorted.map((r) => {
+    const k = r.account + "|" + r.platform;
+    if (r.followers > 0) {
+      last[k] = r.followers;
+      return r;
+    }
+    return last[k] ? { ...r, followers: last[k], followersCarried: true } : r;
+  });
+  const next = {};
+  for (let i = forward.length - 1; i >= 0; i--) {
+    const r = forward[i];
+    const k = r.account + "|" + r.platform;
+    if (r.followers > 0) {
+      next[k] = r;
+      continue;
+    }
+    const after = next[k];
+    if (after) {
+      const before = after.followers - (Number(after.newFollowers) || 0);
+      if (before > 0) {
+        forward[i] = { ...r, followers: before, followersEstimated: true };
+        next[k] = forward[i];
       }
-      return last[k] ? { ...r, followers: last[k], followersCarried: true } : r;
-    });
+    }
+  }
+  return forward;
 }
 
 export function filterRows(rows, { account = "All", platform = "All" } = {}) {

@@ -176,6 +176,7 @@ test("YouTube week: views, watch time in hours, likes, net subscribers, videos p
   assert.equal(r.values.watchTime, 20.5); // 1230 min
   assert.equal(r.values.likes, 210);
   assert.equal(r.values.newFollowers, 34); // 40 − 6
+  assert.equal(r.values.interactions, 233); // 210 + 14 + 9
   assert.equal(r.values.posts, 2); // the October video got views but wasn't published this week
 });
 

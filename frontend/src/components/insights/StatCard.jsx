@@ -8,6 +8,8 @@ import { fmtMetric, fmtValue } from "@/lib/insights/format";
 export default function StatCard({ metric, prev, cur, prevLabel, trend, compact, platform }) {
   const m = metricFor(metric, platform); // YouTube → "Subscribers"
   const diff = cur - prev;
+  // Totals (followers / subscribers) change by a few at a time — show the exact numbers, e.g. 1,818 → 1,820 (+2)
+  const show = (n) => (m.snapshot ? fmtMetric(metric, n) : fmtValue(metric, n));
 
   return (
     <div style={{ ...s.card, ...(compact ? s.compact : {}) }}>
@@ -21,16 +23,16 @@ export default function StatCard({ metric, prev, cur, prevLabel, trend, compact,
 
       <div style={s.middle}>
         <div style={{ ...s.value, ...(compact ? s.valueSm : {}) }} title={fmtMetric(metric, cur)}>
-          {fmtValue(metric, cur)}
+          {show(cur)}
         </div>
         {!compact && <Sparkline values={trend} color={m.color} />}
       </div>
 
       <div style={s.prev}>
-        {prevLabel}: <b style={{ color: theme.text }}>{fmtValue(metric, prev)}</b>
+        {prevLabel}: <b style={{ color: theme.text }}>{show(prev)}</b>
         <span style={{ color: diff >= 0 ? theme.green : theme.red, marginLeft: 8, fontWeight: 600 }}>
           {diff >= 0 ? "+" : "−"}
-          {fmtValue(metric, Math.abs(diff))}
+          {show(Math.abs(diff))}
         </span>
       </div>
     </div>

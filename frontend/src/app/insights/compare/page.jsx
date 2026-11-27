@@ -83,7 +83,7 @@ export default function ComparePage() {
 
       <div style={s.stats}>
         {shownMetrics.map((m) => (
-          <StatCard key={m.key} compact={!m.core} metric={m.key} prev={prevT[m.key]} cur={curT[m.key]} prevLabel={label(prev)} />
+          <StatCard key={m.key} compact={!m.core} metric={m.key} platform={filters.platform} prev={prevT[m.key]} cur={curT[m.key]} prevLabel={label(prev)} />
         ))}
       </div>
 
