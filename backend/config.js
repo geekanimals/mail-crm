@@ -30,6 +30,11 @@ export const config = {
     igAppSecret: process.env.META_IG_APP_SECRET || '',
     graphVersion: str('META_GRAPH_VERSION', 'v21.0'),
   },
+  youtube: {
+    clientId: str('YOUTUBE_CLIENT_ID'),
+    clientSecret: process.env.YOUTUBE_CLIENT_SECRET || '',
+    apiKey: process.env.YOUTUBE_API_KEY || '', // public channel details (name, subscribers, publish dates)
+  },
   jwtExpires: str('JWT_EXPIRES_IN', '12h'),
 
   smtp: { host: str('SMTP_HOST'), port: num('SMTP_PORT', 465), secure: bool('SMTP_SECURE', true), user: str('SMTP_USER'), pass: str('SMTP_PASS') },

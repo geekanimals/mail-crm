@@ -8,7 +8,7 @@ import { addDays } from "../utils/dates.js";
 import { badRequest, notFound } from "../utils/httpError.js";
 import { Connection } from "../models/Connection.js";
 import { SyncLog } from "../models/SyncLog.js";
-import { choosePage, facebookPages, frontendUrl, instagramConnect, keepPending, loginUrl, metaSetup, readPending, readState } from "./auth.js";
+import { choosePage, facebookPages, frontendUrl, instagramConnect, keepPending, loginUrl, metaSetup, readPending, readState, youtubeConnect } from "./auth.js";
 import { readyWeek, syncNow } from "./sync.js";
 import { freshToken } from "./auth.js";
 import { instagramCheck } from "./fetch.js";
@@ -103,6 +103,18 @@ oauthRoutes.get("/instagram/callback", async (req, res) => {
     const conn = await instagramConnect(String(req.query.code || "").replace(/#_$/, ""), state);
     const [first] = await syncNow({ account: conn.account, platform: "Instagram", weeks: 1 });
     back(res, { connected: "Instagram", account: conn.account, name: conn.name, fetched: first?.ok ? "1" : "0" });
+  } catch (e) {
+    back(res, { error: e.message });
+  }
+});
+
+oauthRoutes.get("/youtube/callback", async (req, res) => {
+  try {
+    if (req.query.error) return back(res, { error: req.query.error === "access_denied" ? "YouTube login was cancelled" : String(req.query.error) });
+    const state = readState(req.query.state, "YouTube");
+    const conn = await youtubeConnect(String(req.query.code || ""), state);
+    const [first] = await syncNow({ account: conn.account, platform: "YouTube", weeks: 1 });
+    back(res, { connected: "YouTube", account: conn.account, name: conn.name, fetched: first?.ok ? "1" : "0" });
   } catch (e) {
     back(res, { error: e.message });
   }

@@ -4,8 +4,12 @@ import assert from "node:assert/strict";
 
 process.env.JWT_SECRET ||= "test-secret-for-insights-meta-0123456789";
 process.env.INSIGHTS_MONGODB_URI ||= "mongodb://127.0.0.1:1/insights-test"; // never connected in these tests
+process.env.YOUTUBE_CLIENT_ID ||= "test-client.apps.googleusercontent.com";
+process.env.YOUTUBE_CLIENT_SECRET ||= "test-secret";
+process.env.YOUTUBE_API_KEY ||= "test-key";
 
-const { readyWeek, mergeIntoFileWeek, SOURCE } = await import("../meta/sync.js");
+const { readyWeek, mergeIntoFileWeek, SOURCE, YT_SOURCE } = await import("../meta/sync.js");
+const { youtubeWeek, youtubeLoginUrl } = await import("../meta/youtube.js");
 const { encrypt, decrypt, sign, verify } = await import("../utils/secret.js");
 const { instagramWeek, facebookWeek, instagramCheck } = await import("../meta/fetch.js");
 
@@ -131,4 +135,67 @@ test("Check: week views, breakdown, and Instagram + Facebook views of each reel 
   assert.deepEqual(r.breakdown.media_product_type, { REEL: 15000, POST: 3100 });
   assert.equal(r.media.length, 2); // the September post is outside the 5 weeks
   assert.deepEqual(r.totals.weekPosts, { count: 2, instagram: 10200, facebook: 10000, both: 19000 });
+});
+
+test("YouTube login link asks for a long-term (offline) login with read-only analytics", () => {
+  const u = new URL(youtubeLoginUrl({ redirectUri: "https://crm.example.com/api/insights-oauth/youtube/callback", state: "s1" }));
+  assert.equal(u.origin + u.pathname, "https://accounts.google.com/o/oauth2/v2/auth");
+  assert.equal(u.searchParams.get("access_type"), "offline");
+  assert.match(u.searchParams.get("prompt"), /consent/);
+  assert.match(u.searchParams.get("scope"), /yt-analytics\.readonly/);
+  assert.equal(u.searchParams.get("state"), "s1");
+});
+
+function fakeGoogle({ totals, videos, details, channel, status = 200 }) {
+  globalThis.fetch = async (url) => {
+    const u = new URL(url);
+    let body;
+    if (u.host === "youtubeanalytics.googleapis.com") body = u.searchParams.get("dimensions") === "video" ? videos : totals;
+    else if (u.pathname.endsWith("/videos")) body = u.searchParams.get("key") === "test-key" ? details : { error: { message: "no key" } };
+    else if (u.pathname.endsWith("/channels")) body = channel;
+    return new Response(JSON.stringify(body), { status: body?.error ? status : 200 });
+  };
+}
+
+test("YouTube week: views, watch time in hours, likes, net subscribers, videos published (API key), subscribers today", async () => {
+  fakeGoogle({
+    totals: {
+      columnHeaders: ["views", "estimatedMinutesWatched", "likes", "comments", "shares", "subscribersGained", "subscribersLost"].map((name) => ({ name })),
+      rows: [[5300, 1230, 210, 14, 9, 40, 6]],
+    },
+    videos: { rows: [["v1", 3000], ["v2", 1500], ["v3", 800]] },
+    details: { items: [
+      { id: "v1", snippet: { channelId: "UC1", channelTitle: "GBTG", publishedAt: "2026-11-21T10:00:00Z" } },
+      { id: "v2", snippet: { channelId: "UC1", channelTitle: "GBTG", publishedAt: "2026-11-16T03:00:00Z" } },
+      { id: "v3", snippet: { channelId: "UC1", channelTitle: "GBTG", publishedAt: "2026-10-01T03:00:00Z" } },
+    ] },
+    channel: { items: [{ statistics: { subscriberCount: "12890" } }] },
+  });
+  const r = await youtubeWeek("UC1", "tok", { start: "2026-11-16", end: "2026-11-22" });
+  assert.equal(r.values.views, 5300);
+  assert.equal(r.values.watchTime, 20.5); // 1230 min
+  assert.equal(r.values.likes, 210);
+  assert.equal(r.values.newFollowers, 34); // 40 − 6
+  assert.equal(r.values.posts, 2); // the October video got views but wasn't published this week
+});
+
+test("YouTube login asks only for the read-only Analytics permission (non-sensitive → no Google verification)", () => {
+  const u = new URL(youtubeLoginUrl({ redirectUri: "https://x/cb", state: "s" }));
+  assert.equal(u.searchParams.get("scope"), "https://www.googleapis.com/auth/yt-analytics.readonly");
+});
+
+test("YouTube: expired Google login asks to reconnect; used-up quota retries later", async () => {
+  fakeGoogle({ totals: { error: { code: 401, message: "Invalid Credentials" } }, status: 401 });
+  await assert.rejects(youtubeWeek("UC1", "tok", { start: "2026-11-16", end: "2026-11-22" }), (e) => e.reconnect && /Reconnect/.test(e.message));
+  fakeGoogle({ totals: { error: { code: 403, message: "The request cannot be completed because you have exceeded your quota." } }, status: 403 });
+  await assert.rejects(youtubeWeek("UC1", "tok", { start: "2026-11-16", end: "2026-11-22" }), (e) => e.retry && !e.reconnect);
+});
+
+test("YouTube fetch into an uploaded week: file numbers stay, history says YouTube", () => {
+  const week = { views: 7000, likes: 0, sourceFiles: ["Table data.csv"] };
+  const how = mergeIntoFileWeek(week, { views: 6900, likes: 120 }, YT_SOURCE);
+  assert.equal(week.views, 7000);
+  assert.equal(week.likes, 120);
+  assert.deepEqual(week.sourceFiles, ["Table data.csv", YT_SOURCE]);
+  assert.match(how, /filled from YouTube: likes 120 · kept from file: views 7\.0K \(YouTube 6\.9K\)/);
 });

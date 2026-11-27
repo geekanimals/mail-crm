@@ -6,6 +6,7 @@ import { badRequest } from "../utils/httpError.js";
 import { decrypt, encrypt, sign, verify } from "../utils/secret.js";
 import { Connection } from "../models/Connection.js";
 import { FB_GRAPH, IG_GRAPH, graphGet, graphPostForm } from "./graph.js";
+import { youtubeAccessToken, youtubeExchange, youtubeLoginUrl, youtubeSetup } from "./youtube.js";
 
 export const redirectUri = (provider) => `${config.publicUrl}/api/insights-oauth/${provider}/callback`;
 export const frontendUrl = () => config.frontendUrls[0];
@@ -15,7 +16,8 @@ export function metaSetup() {
   return {
     facebook: Boolean(m.appId && m.appSecret && m.loginConfigId),
     instagram: Boolean(m.igAppId && m.igAppSecret),
-    redirectUris: { facebook: redirectUri("facebook"), instagram: redirectUri("instagram") },
+    youtube: youtubeSetup(),
+    redirectUris: { facebook: redirectUri("facebook"), instagram: redirectUri("instagram"), youtube: redirectUri("youtube") },
   };
 }
 
@@ -42,7 +44,8 @@ export function loginUrl({ account, platform, user }) {
     }).toString();
     return u.toString();
   }
-  throw badRequest("Only Facebook and Instagram can be connected");
+  if (platform === "YouTube") return youtubeLoginUrl({ redirectUri: redirectUri("youtube"), state });
+  throw badRequest("Only Facebook, Instagram and YouTube can be connected");
 }
 
 export function readState(state, platform) {
@@ -104,8 +107,15 @@ export async function instagramConnect(code, state) {
   });
 }
 
-// Instagram tokens: refresh when less than 15 days are left
+// ---- YouTube: code → refresh token (kept) + the channel picked ----
+export async function youtubeConnect(code, state) {
+  const yt = await youtubeExchange(code, redirectUri("youtube"));
+  return saveConnection({ account: state.account, platform: "YouTube", externalId: yt.channelId, name: yt.name, token: yt.refreshToken, expiresAt: null, user: state.user });
+}
+
+// Instagram tokens: refresh when less than 15 days are left. YouTube: a fresh 1-hour token every fetch.
 export async function freshToken(conn) {
+  if (conn.platform === "YouTube") return youtubeAccessToken(conn);
   const token = decrypt(conn.tokenEnc);
   if (conn.platform !== "Instagram" || !conn.tokenExpiresAt) return token;
   if (conn.tokenExpiresAt - Date.now() > 15 * 86400 * 1000) return token;

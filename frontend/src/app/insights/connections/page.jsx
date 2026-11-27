@@ -1,9 +1,9 @@
 "use client";
 
-// Connections: link each company's Facebook Page and Instagram once (Meta login) — numbers are then fetched
+// Connections: link each company's Facebook Page, Instagram (Meta login) and YouTube channel (Google login) once — numbers are then fetched
 // every week automatically and saved like an upload. Shows status, errors and the fetch history.
 import { useCallback, useEffect, useState } from "react";
-import { LuFacebook, LuInstagram, LuRefreshCw } from "react-icons/lu";
+import { LuFacebook, LuInstagram, LuRefreshCw, LuYoutube } from "react-icons/lu";
 import PageHeader from "@/components/insights/PageHeader";
 import Card from "@/components/insights/Card";
 import { useData } from "@/components/insights/DataProvider";
@@ -15,6 +15,7 @@ import { useScreen } from "@/lib/insights/useScreen";
 const PLATFORMS = [
   { name: "Facebook", Icon: LuFacebook, color: "#1877f2", what: "Facebook Page" },
   { name: "Instagram", Icon: LuInstagram, color: "#e1306c", what: "Instagram professional account" },
+  { name: "YouTube", Icon: LuYoutube, color: "#ff0000", what: "YouTube channel (Google account)" },
 ];
 const when = (d) => (d ? new Date(d).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }) : "—");
 const weekLabel = (start) => (start ? fmtRange(start, new Date(Date.parse(start) + 6 * 86400000).toISOString().slice(0, 10)) : "—");
@@ -64,7 +65,7 @@ export default function ConnectionsPage() {
 
   const connect = (account, platform) =>
     run(`${account}|${platform}|connect`, async () => {
-      window.location.href = await api.metaConnect(account, platform); // goes to Meta's login page
+      window.location.href = await api.metaConnect(account, platform); // goes to Meta's / Google's login page
     });
 
   const fetchNow = (body, label) =>
@@ -89,20 +90,22 @@ export default function ConnectionsPage() {
       <PageHeader
         eyebrow="Auto-fetch"
         title="Connections"
-        subtitle="Connect each company's Facebook Page and Instagram once — every week the numbers are fetched from Meta and saved automatically."
+        subtitle="Connect each company's Facebook Page, Instagram and YouTube once — every week the numbers are fetched and saved automatically."
       />
 
       {error && <div style={{ ...s.box, ...s.err }}>⚠ {error}</div>}
       {note && <div style={{ ...s.box, ...s.ok }}>✓ {note}</div>}
 
-      {setup && (!setup.facebook || !setup.instagram) && (
+      {setup && (!setup.facebook || !setup.instagram || !setup.youtube) && (
         <div style={{ ...s.box, ...s.warn }}>
           <b>Server setup needed before connecting:</b>
           {!setup.facebook && <div>• Facebook: add META_APP_ID, META_APP_SECRET and META_LOGIN_CONFIG_ID to the backend .env</div>}
           {!setup.instagram && <div>• Instagram: add META_IG_APP_ID and META_IG_APP_SECRET to the backend .env</div>}
-          <div style={{ marginTop: 6 }}>Redirect URLs to add in the Meta app:</div>
+          {!setup.youtube && <div>• YouTube: add YOUTUBE_CLIENT_ID and YOUTUBE_CLIENT_SECRET (Google Cloud OAuth client) to the backend .env</div>}
+          <div style={{ marginTop: 6 }}>Redirect URLs (Meta app for Facebook/Instagram, Google Cloud OAuth client for YouTube):</div>
           <code style={s.code}>{setup.redirectUris.facebook}</code>
           <code style={s.code}>{setup.redirectUris.instagram}</code>
+          {setup.redirectUris.youtube && <code style={s.code}>{setup.redirectUris.youtube}</code>}
         </div>
       )}
 
@@ -121,7 +124,7 @@ export default function ConnectionsPage() {
 
       <Card
         title="Companies"
-        subtitle={status ? `Automatic fetch: every week once Meta has finished counting (Tuesday morning). Next week to fetch: ${weekLabel(status.readyWeek?.start)}` : "Loading…"}
+        subtitle={status ? `Automatic fetch: every week once Meta and YouTube have finished counting (Tuesday morning). Next week to fetch: ${weekLabel(status.readyWeek?.start)}` : "Loading…"}
         right={
           <div style={s.bulk}>
             <select value={weeks} onChange={(e) => setWeeks(e.target.value)} style={s.select} aria-label="Weeks to fetch">
@@ -173,7 +176,7 @@ export default function ConnectionsPage() {
                       </>
                     ) : (
                       <div style={s.actions}>
-                        <button type="button" disabled={Boolean(busy) || (name === "Facebook" ? !setup?.facebook : !setup?.instagram)} onClick={() => connect(account, name)} style={s.connect}>
+                        <button type="button" disabled={Boolean(busy) || !setup?.[name.toLowerCase()]} onClick={() => connect(account, name)} style={s.connect}>
                           Connect {name}
                         </button>
                         <span style={s.hint}>Log in with the account that manages this {what}</span>

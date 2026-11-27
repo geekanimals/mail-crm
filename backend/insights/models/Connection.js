@@ -5,10 +5,10 @@ import { db } from "../db.js";
 const connectionSchema = new mongoose.Schema(
   {
     account: { type: String, required: true, trim: true }, // company in Insights, e.g. GBTG
-    platform: { type: String, required: true, enum: ["Facebook", "Instagram"] },
-    externalId: { type: String, required: true }, // Facebook Page ID / Instagram user ID
+    platform: { type: String, required: true, enum: ["Facebook", "Instagram", "YouTube"] },
+    externalId: { type: String, required: true }, // Facebook Page ID / Instagram user ID / YouTube channel ID
     name: { type: String, default: "" }, // Page name / Instagram @username
-    tokenEnc: { type: String, required: true }, // encrypted access token (never sent to the browser)
+    tokenEnc: { type: String, required: true }, // encrypted token (never sent to the browser) — YouTube keeps its refresh token here
     tokenExpiresAt: { type: Date, default: null }, // Instagram tokens last 60 days (refreshed automatically)
     connectedBy: { type: String, default: "" },
     status: { type: String, enum: ["ok", "error"], default: "ok" },

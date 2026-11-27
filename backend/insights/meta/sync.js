@@ -6,8 +6,12 @@ import { SyncLog } from "../models/SyncLog.js";
 import { addDays } from "../utils/dates.js";
 import { freshToken } from "./auth.js";
 import { facebookWeek, instagramWeek } from "./fetch.js";
+import { youtubeWeek } from "./youtube.js";
 
 export const SOURCE = "Meta API";
+export const YT_SOURCE = "YouTube API";
+const API_SOURCES = [SOURCE, YT_SOURCE];
+const sourceOf = (platform) => (platform === "YouTube" ? YT_SOURCE : SOURCE);
 const MAX_AUTO_TRIES = 6; // automatic retries stop after this many failures in a row (Fetch now always works)
 
 const todayIST = () => new Date(Date.now() + 5.5 * 3600 * 1000).toISOString().slice(0, 10);
@@ -25,7 +29,7 @@ const summary = (v) => Object.entries(v).map(([k, n]) => `${k} ${short(n)}`).joi
 
 // A week saved from uploaded files: keep every uploaded number, only fill numbers that are still 0.
 // Decided by the files themselves (not by an earlier fetch), so a later fetch never overwrites them.
-export function mergeIntoFileWeek(existing, values) {
+export function mergeIntoFileWeek(existing, values, source = SOURCE) {
   const filled = [];
   const kept = [];
   const same = [];
@@ -33,11 +37,11 @@ export function mergeIntoFileWeek(existing, values) {
     const mine = existing[k] || 0;
     if (!mine && v) (existing[k] = v), filled.push(`${k} ${short(v)}`);
     else if (mine === v) same.push(`${k} ${short(v)}`);
-    else if (v || mine) kept.push(`${k} ${short(mine)} (Meta ${short(v)})`);
+    else if (v || mine) kept.push(`${k} ${short(mine)} (${source.replace(" API", "")} ${short(v)})`);
   }
-  if (filled.length && !existing.sourceFiles.includes(SOURCE)) existing.sourceFiles = [...existing.sourceFiles, SOURCE];
+  if (filled.length && !existing.sourceFiles.includes(source)) existing.sourceFiles = [...existing.sourceFiles, source];
   const parts = [];
-  if (filled.length) parts.push(`filled from Meta: ${filled.join(", ")}`);
+  if (filled.length) parts.push(`filled from ${source.replace(" API", "")}: ${filled.join(", ")}`);
   if (kept.length) parts.push(`kept from file: ${kept.join(", ")}`);
   if (same.length) parts.push(`same in both: ${same.join(", ")}`);
   return parts.join(" · ") || "kept the uploaded numbers";
@@ -46,20 +50,20 @@ export function mergeIntoFileWeek(existing, values) {
 async function saveWeek(conn, week, values) {
   const key = { account: conn.account, platform: conn.platform, week: week.start };
   const existing = await Entry.findOne(key);
-  const fromFiles = existing && (existing.sourceFiles || []).some((f) => f !== SOURCE);
+  const fromFiles = existing && (existing.sourceFiles || []).some((f) => !API_SOURCES.includes(f));
   if (fromFiles) {
-    const how = mergeIntoFileWeek(existing, values);
+    const how = mergeIntoFileWeek(existing, values, sourceOf(conn.platform));
     await existing.save();
     return how;
   }
-  await Entry.findOneAndUpdate(key, { ...key, end: week.end, ...values, sourceFiles: [SOURCE] }, { upsert: true, runValidators: true, setDefaultsOnInsert: true });
+  await Entry.findOneAndUpdate(key, { ...key, end: week.end, ...values, sourceFiles: [sourceOf(conn.platform)] }, { upsert: true, runValidators: true, setDefaultsOnInsert: true });
   return `${existing ? "updated" : "saved"}: ${summary(values)}`;
 }
 
 export async function syncConnection(conn, week, trigger = "auto") {
   try {
     const token = await freshToken(conn);
-    const fetcher = conn.platform === "Instagram" ? instagramWeek : facebookWeek;
+    const fetcher = { Instagram: instagramWeek, Facebook: facebookWeek, YouTube: youtubeWeek }[conn.platform];
     const { values, notes } = await fetcher(conn.externalId, token, week);
     const how = await saveWeek(conn, week, values);
     conn.status = "ok";
@@ -77,7 +81,7 @@ export async function syncConnection(conn, week, trigger = "auto") {
     conn.lastFetchAt = new Date();
     await conn.save();
     await SyncLog.create({ account: conn.account, platform: conn.platform, week: week.start, end: week.end, ok: false, trigger, message: e.message });
-    console.error(`[insights] Meta fetch failed for ${conn.account} · ${conn.platform}: ${e.message}`);
+    console.error(`[insights] Auto-fetch failed for ${conn.account} · ${conn.platform}: ${e.message}`);
     return { ok: false, week: week.start, error: e.message };
   }
 }
