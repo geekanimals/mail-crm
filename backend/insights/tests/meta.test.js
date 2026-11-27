@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 process.env.JWT_SECRET ||= "test-secret-for-insights-meta-0123456789";
 process.env.INSIGHTS_MONGODB_URI ||= "mongodb://127.0.0.1:1/insights-test"; // never connected in these tests
 
-const { readyWeek } = await import("../meta/sync.js");
+const { readyWeek, mergeIntoFileWeek, SOURCE } = await import("../meta/sync.js");
 const { encrypt, decrypt, sign, verify } = await import("../utils/secret.js");
 const { instagramWeek, facebookWeek } = await import("../meta/fetch.js");
 
@@ -86,4 +86,22 @@ test("Facebook week: renamed Page metrics fall back to the next name", async () 
 test("expired login stops the fetch with a clear message", async () => {
   globalThis.fetch = async () => new Response(JSON.stringify({ error: { code: 190, message: "Error validating access token" } }), { status: 400 });
   await assert.rejects(instagramWeek("1789", "tok", { start: "2026-11-16", end: "2026-11-22" }), /Reconnect/);
+});
+
+test("uploaded week: file numbers stay on every fetch (also the 2nd), Meta only fills zeros, history says what happened", () => {
+  const week = { views: 413715, reach: 52521, likes: 5699, comments: 0, visits: 155, newFollowers: 143, sourceFiles: ["Views (1).csv"] };
+  const meta = { views: 73700, reach: 61500, likes: 3700, comments: 49, visits: 155, newFollowers: 143 };
+  const first = mergeIntoFileWeek(week, meta);
+  assert.equal(week.views, 413715);
+  assert.equal(week.comments, 49);
+  assert.deepEqual(week.sourceFiles, ["Views (1).csv", SOURCE]);
+  assert.match(first, /filled from Meta: comments 49/);
+  assert.match(first, /kept from file: views 4\.1L \(Meta 73\.7K\)/);
+  assert.match(first, /same in both: visits 155, newFollowers 143/);
+  // second fetch: the entry now carries "Meta API" too — file numbers must still win
+  const second = mergeIntoFileWeek(week, { ...meta, views: 80000, comments: 60 });
+  assert.equal(week.views, 413715);
+  assert.equal(week.comments, 49);
+  assert.equal(week.sourceFiles.filter((f) => f === SOURCE).length, 1);
+  assert.match(second, /kept from file: views 4\.1L \(Meta 80\.0K\)/);
 });

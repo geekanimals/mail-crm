@@ -23,19 +23,37 @@ export function readyWeek(today = todayIST()) {
 const short = (n) => (n >= 1e5 ? (n / 1e5).toFixed(1) + "L" : n >= 1e3 ? (n / 1e3).toFixed(1) + "K" : String(n));
 const summary = (v) => Object.entries(v).map(([k, n]) => `${k} ${short(n)}`).join(", ");
 
+// A week saved from uploaded files: keep every uploaded number, only fill numbers that are still 0.
+// Decided by the files themselves (not by an earlier fetch), so a later fetch never overwrites them.
+export function mergeIntoFileWeek(existing, values) {
+  const filled = [];
+  const kept = [];
+  const same = [];
+  for (const [k, v] of Object.entries(values)) {
+    const mine = existing[k] || 0;
+    if (!mine && v) (existing[k] = v), filled.push(`${k} ${short(v)}`);
+    else if (mine === v) same.push(`${k} ${short(v)}`);
+    else if (v || mine) kept.push(`${k} ${short(mine)} (Meta ${short(v)})`);
+  }
+  if (filled.length && !existing.sourceFiles.includes(SOURCE)) existing.sourceFiles = [...existing.sourceFiles, SOURCE];
+  const parts = [];
+  if (filled.length) parts.push(`filled from Meta: ${filled.join(", ")}`);
+  if (kept.length) parts.push(`kept from file: ${kept.join(", ")}`);
+  if (same.length) parts.push(`same in both: ${same.join(", ")}`);
+  return parts.join(" · ") || "kept the uploaded numbers";
+}
+
 async function saveWeek(conn, week, values) {
   const key = { account: conn.account, platform: conn.platform, week: week.start };
   const existing = await Entry.findOne(key);
-  if (existing && !(existing.sourceFiles || []).includes(SOURCE)) {
-    // saved from uploaded files → keep them, only fill numbers that are still 0
-    let filled = 0;
-    for (const [k, v] of Object.entries(values)) if (!existing[k] && v) (existing[k] = v), filled++;
-    if (filled) existing.sourceFiles = [...existing.sourceFiles, SOURCE];
+  const fromFiles = existing && (existing.sourceFiles || []).some((f) => f !== SOURCE);
+  if (fromFiles) {
+    const how = mergeIntoFileWeek(existing, values);
     await existing.save();
-    return filled ? `kept the uploaded numbers, filled ${filled} empty` : "kept the uploaded numbers";
+    return how;
   }
   await Entry.findOneAndUpdate(key, { ...key, end: week.end, ...values, sourceFiles: [SOURCE] }, { upsert: true, runValidators: true, setDefaultsOnInsert: true });
-  return existing ? "updated" : "saved";
+  return `${existing ? "updated" : "saved"}: ${summary(values)}`;
 }
 
 export async function syncConnection(conn, week, trigger = "auto") {
@@ -50,7 +68,7 @@ export async function syncConnection(conn, week, trigger = "auto") {
     conn.lastFetchAt = new Date();
     if (week.start > (conn.lastFetchWeek || "")) conn.lastFetchWeek = week.start;
     await conn.save();
-    await SyncLog.create({ account: conn.account, platform: conn.platform, week: week.start, end: week.end, ok: true, trigger, message: `${how}: ${summary(values)}` });
+    await SyncLog.create({ account: conn.account, platform: conn.platform, week: week.start, end: week.end, ok: true, trigger, message: how });
     return { ok: true, week: week.start, values };
   } catch (e) {
     conn.status = "error";
