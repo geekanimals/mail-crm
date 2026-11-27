@@ -48,12 +48,13 @@ test("Instagram week: every metric read, a retired metric is skipped, not fatal"
     comments: { data: [{ total_value: { value: 18 } }] },
     shares: { data: [{ total_value: { value: 9 } }] },
     // saves missing → error 100, skipped
+    total_interactions: { data: [{ total_value: { value: 280 } }] },
     profile_views: { data: [{ total_value: { value: 77 } }] },
     follower_count: { data: [{ values: [{ value: 3 }, { value: 5 }, { value: -1 }] }] },
     posts: { data: [{ timestamp: "2026-11-18T10:00:00+0000" }, { timestamp: "2026-11-16T03:00:00+0000" }, { timestamp: "2026-11-10T03:00:00+0000" }] },
   });
   const r = await instagramWeek("1789", "tok", { start: "2026-11-16", end: "2026-11-22" });
-  assert.deepEqual(r.values, { views: 5200, reach: 3100, likes: 240, comments: 18, shares: 9, visits: 77, newFollowers: 7, posts: 2 });
+  assert.deepEqual(r.values, { views: 5200, reach: 3100, likes: 240, comments: 18, shares: 9, interactions: 280, visits: 77, newFollowers: 7, posts: 2 });
   assert.ok(r.notes.some((n) => n.startsWith("saves")));
 });
 
@@ -80,7 +81,7 @@ test("Facebook week: renamed Page metrics fall back to the next name", async () 
     posts: { data: [{ created_time: "2026-11-20T09:00:00+0000" }] },
   });
   const r = await facebookWeek("123", "tok", { start: "2026-11-09", end: "2026-11-15" });
-  assert.deepEqual(r.values, { views: 600, reach: 110, likes: 18, newFollowers: 3, visits: 8, posts: 0 });
+  assert.deepEqual(r.values, { views: 600, reach: 110, interactions: 18, newFollowers: 3, visits: 8, posts: 0 });
 });
 
 test("expired login stops the fetch with a clear message", async () => {

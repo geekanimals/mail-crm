@@ -27,7 +27,7 @@ test("csv: quotes, commas and line breaks inside cells", () => {
 test("Meta daily files (Views, Interactions, Follows, Viewers, Visits) — only days inside the range", () => {
   const files = ["Views.csv", "Interactions.csv", "Follows.csv", "Viewers.csv", "Visits.csv"].map(fixture);
   const r = parseFiles(files, WEEK);
-  assert.deepEqual(r.values, { views: 6900, likes: 69, newFollowers: 12, reach: 300, visits: 30 });
+  assert.deepEqual(r.values, { views: 6900, interactions: 69, newFollowers: 12, viewers: 300, visits: 30 });
   assert.deepEqual(r.detected, { start: "2026-11-01", end: "2026-11-14" });
   assert.ok(r.report.every((f) => f.ok));
 });
@@ -128,6 +128,17 @@ test("Meta daily files saved as UTF-16 (Views, Viewers, Interactions, Follows, V
   const files = names.map((n) => ({ originalname: n, buffer: readFileSync(new URL("./fixtures/meta-utf16/" + n, import.meta.url)) }));
   const r = parseFiles(files, { start: "2026-11-16", end: "2026-11-22" });
   assert.equal(r.report.filter((x) => x.ok).length, 6);
-  assert.deepEqual(r.values, { views: 168948, reach: 122477, likes: 1598, newFollowers: 57, visits: 370, linkClicks: 2 });
+  assert.deepEqual(r.values, { views: 168948, viewers: 122477, interactions: 1598, newFollowers: 57, visits: 370, linkClicks: 2 });
   assert.deepEqual(r.detected, { start: "2026-10-24", end: "2026-11-22" });
+});
+
+test("GBTG Instagram 16–22 Nov 2026 (real Business Suite files): Viewers and Content interactions keep their own names", () => {
+  const names = ["Views_1.csv", "Viewers.csv", "Interactions_1.csv", "Follows_1.csv", "Visits_1.csv", "Link_clicks_1.csv"];
+  const files = names.map((n) => ({ originalname: n, buffer: readFileSync(new URL("./fixtures/gbtg-ig-2026-11-16/" + n, import.meta.url)) }));
+  const r = parseFiles(files, { start: "2026-11-16", end: "2026-11-22" });
+  assert.equal(r.report.filter((x) => x.ok).length, 6);
+  // Content interactions has a −4 day (an un-like/unsave) — the week still adds up to 243
+  assert.deepEqual(r.values, { views: 28380, viewers: 12046, interactions: 243, newFollowers: 42, visits: 65, linkClicks: 0 });
+  assert.equal(r.values.likes, undefined); // the files have no likes on their own
+  assert.equal(r.values.reach, undefined); // daily viewers added up are not the week's reach
 });

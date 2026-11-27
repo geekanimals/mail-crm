@@ -7,8 +7,10 @@ export const DEFAULT_ACCOUNTS = ["GBTG", "GEEK", "SUSTAINIFY", "Mayank"];
 // Every number stored for one account + platform + date range
 export const METRIC_KEYS = [
   "views", // Views / Impressions
-  "reach", // Reach / Viewers / Unique impressions
-  "likes", // Likes / Reactions / Interactions
+  "reach", // Reach — unique people in the range (Meta API reach, unique impressions)
+  "viewers", // Viewers added up day by day (Meta Business Suite "Viewers" file; same person counted every day)
+  "likes", // Likes / Reactions only
+  "interactions", // All content interactions together (Meta "Content interactions": likes + comments + shares + saves …)
   "comments",
   "shares", // Shares / Reposts
   "saves",

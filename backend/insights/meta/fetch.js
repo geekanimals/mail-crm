@@ -55,6 +55,7 @@ const IG_TOTALS = [
   ["comments", "comments"],
   ["shares", "shares"],
   ["saves", "saves"],
+  ["interactions", "total_interactions"],
   ["visits", "profile_views"],
 ];
 
@@ -98,7 +99,7 @@ export async function instagramWeek(igId, token, { start, end }) {
 const FB_DAILY = [
   ["views", ["page_media_view", "page_impressions"]],
   ["reach", ["page_total_media_view_unique", "page_impressions_unique"]],
-  ["likes", ["page_post_engagements"]], // interactions with the Page's posts
+  ["interactions", ["page_post_engagements"]], // all interactions with the Page's posts (not likes alone)
   ["newFollowers", ["page_daily_follows_unique", "page_daily_follows", "page_fan_adds_unique"]],
   ["visits", ["page_views_total"]],
 ];

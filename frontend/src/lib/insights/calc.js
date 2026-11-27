@@ -43,9 +43,10 @@ export function change(prev, cur) {
   return ((cur - prev) / prev) * 100;
 }
 
-// Engagement rate = (likes + comments + shares) / views
+// Engagement rate = interactions / views (Meta gives all interactions together; otherwise likes + comments + shares)
 export function engagementRate(t) {
-  return t.views ? ((t.likes + t.comments + t.shares) / t.views) * 100 : 0;
+  const acted = t.interactions || (t.likes || 0) + (t.comments || 0) + (t.shares || 0);
+  return t.views ? (acted / t.views) * 100 : 0;
 }
 
 export function listWeeks(rows) {

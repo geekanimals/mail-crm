@@ -187,7 +187,7 @@ export function diagnose(prev, cur, period = "week", platform = "") {
   }
 
   // ---- Overall verdict (main metrics only) ----
-  const main = ["views", "reach", "likes", "comments", "shares", "newFollowers"].filter((k) => prev[k] > 0);
+  const main = ["views", "reach", "viewers", "interactions", "likes", "comments", "shares", "newFollowers"].filter((k) => prev[k] > 0);
   const ups = main.filter(up).length;
   const downs = main.filter(down).length;
   const verdict = ups && !downs ? "up" : downs && !ups ? "down" : ups || downs ? "mixed" : "steady";

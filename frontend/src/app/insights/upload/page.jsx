@@ -222,7 +222,7 @@ export default function UploadPage() {
                 <table style={s.table}>
                   <thead>
                     <tr>
-                      {(split ? ["Week", "Views", "Reach", "Likes", "Comments", "Shares", fans, "Posts"] : ["Week", "Account", "Platform", "Views", "Likes", "Followers"]).map((h) => (
+                      {(split ? ["Week", "Views", "Reach", "Viewers", "Interactions", "Likes", "Comments", "Shares", fans, "Posts"] : ["Week", "Account", "Platform", "Views", "Interactions", "Likes", "Followers"]).map((h) => (
                         <th key={h} style={s.th}>{h}</th>
                       ))}
                     </tr>
@@ -232,7 +232,7 @@ export default function UploadPage() {
                       <tr key={w.week + w.account + w.platform}>
                         <td style={s.td}>{fmtRange(w.week, w.end)}</td>
                         {split ? (
-                          ["views", "reach", "likes", "comments", "shares", "followers", "posts"].map((k) => (
+                          ["views", "reach", "viewers", "interactions", "likes", "comments", "shares", "followers", "posts"].map((k) => (
                             <td key={k} style={s.td}>{w[k] ? fmtFull(w[k]) : "–"}</td>
                           ))
                         ) : (
@@ -240,7 +240,8 @@ export default function UploadPage() {
                             <td style={s.td}>{w.account}</td>
                             <td style={s.td}>{w.platform}</td>
                             <td style={s.td}>{fmtFull(w.views)}</td>
-                            <td style={s.td}>{fmtFull(w.likes)}</td>
+                            <td style={s.td}>{w.interactions ? fmtFull(w.interactions) : "–"}</td>
+                            <td style={s.td}>{w.likes ? fmtFull(w.likes) : "–"}</td>
                             <td style={s.td}>{fmtFull(w.followers)}</td>
                           </>
                         )}

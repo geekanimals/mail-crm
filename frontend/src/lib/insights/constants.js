@@ -8,8 +8,10 @@ export const DEFAULT_ACCOUNTS = ["GBTG", "GEEK", "SUSTAINIFY", "Mayank"];
 // core: shown as main cards. snapshot: not added up (latest value is used). money: shown as $
 export const METRICS = [
   { key: "views", label: "Views", full: "Views / Impressions", icon: "◉", color: "#2d6a5f", group: "Reach", core: true },
-  { key: "reach", label: "Reach", full: "Reach / Viewers", icon: "◎", color: "#0ea5e9", group: "Reach" },
-  { key: "likes", label: "Likes", full: "Likes / Interactions", icon: "♥", color: "#ec4899", group: "Engagement", core: true },
+  { key: "reach", label: "Reach", full: "Reach (unique people)", icon: "◎", color: "#0ea5e9", group: "Reach" },
+  { key: "viewers", label: "Viewers", full: "Viewers (added up day by day)", icon: "◌", color: "#38bdf8", group: "Reach" },
+  { key: "interactions", label: "Interactions", full: "Interactions (likes + comments + shares + saves)", icon: "✦", color: "#db2777", group: "Engagement", core: true },
+  { key: "likes", label: "Likes", full: "Likes", icon: "♥", color: "#ec4899", group: "Engagement", core: true },
   { key: "comments", label: "Comments", full: "Comments", icon: "❝", color: "#f97316", group: "Engagement" },
   { key: "shares", label: "Shares", full: "Shares / Reposts", icon: "↻", color: "#14b8a6", group: "Engagement" },
   { key: "saves", label: "Saves", full: "Saves / Bookmarks", icon: "⚑", color: "#0d9488", group: "Engagement" },
