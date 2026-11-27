@@ -45,6 +45,8 @@ const contactSchema = new Schema(
     bounce: new Schema({ reason: String, code: String, detail: String, at: Date, via: String }, { _id: false }),
     newsletter: { type: Boolean, default: false, index: true }, // finished the sequence with no reply -> newsletter list
     newsletterAt: Date,
+    newsletterCount: { type: Number, default: 0 }, // issues this person has been sent
+    newsletterLastAt: Date,
   },
   {
     timestamps: true,

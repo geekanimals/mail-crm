@@ -24,6 +24,7 @@ import fileRoutes from './routes/files.js';
 import dealRoutes from './routes/deals.js';
 import ideaRoutes from './routes/ideas.js';
 import newsletterRoutes from './routes/newsletter.js';
+import newsletterPublic from './routes/newsletter-public.js';
 import { admin as websiteLeadRoutes, hook as websiteLeadHook } from './routes/website-leads.js';
 import insightsRoutes, { ensureDefaultAccounts, insightsOAuthRoutes, startMetaTimer } from './insights/index.js';
 import { Company, Contact, Notification, Reply, getSetting, setSetting } from './models.js';
@@ -43,6 +44,7 @@ app.use(
 // email links (unsubscribe / tracking) - public
 app.use(['/u', '/t'], publicLimit);
 app.use(publicRoutes);
+app.use('/api/public/nl', newsletterPublic); // newsletter photos, videos, open pixel, click links (email apps load these)
 app.get('/health', (_req, res) => res.json({ ok: true }));
 
 // API - only the frontend URL from .env may call it
@@ -60,7 +62,7 @@ app.use('/api', (req, _res, next) => (clean(req.body), next()));
 
 // stricter limits for heavy / email-sending actions
 const heavyWrites = (req, res, next) => (req.method === 'GET' ? next() : heavyLimit(req, res, next)); // checking progress is not limited
-app.use(['/api/files', '/api/contacts/import', '/api/contacts/import-continue', '/api/companies/import/google', '/api/settings/run', '/api/settings/test-smtp', '/api/replies/check', '/api/campaigns/:id/start', '/api/insights/uploads'], heavyWrites);
+app.use(['/api/files', '/api/contacts/import', '/api/contacts/import-continue', '/api/companies/import/google', '/api/settings/run', '/api/settings/test-smtp', '/api/replies/check', '/api/campaigns/:id/start', '/api/insights/uploads', '/api/newsletter/media'], heavyWrites);
 app.use('/api/settings/test-email', testEmailLimit);
 
 app.use('/api/public/website-lead', websiteLeadLimit, websiteLeadHook); // the website's client form (shared secret, no login)
