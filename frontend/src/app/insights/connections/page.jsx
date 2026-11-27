@@ -155,7 +155,7 @@ export default function ConnectionsPage() {
                           {c.name || what} · last fetch {when(c.lastFetchAt)}
                           {c.lastFetchWeek && ` · latest week ${weekLabel(c.lastFetchWeek)}`}
                         </div>
-                        {c.lastError && <div style={{ ...s.meta, color: c.status === "error" ? theme.red : "#8a4b00" }}>{c.lastError}</div>}
+                        {c.lastError && <div style={{ ...s.meta, color: c.status === "error" ? theme.red : "#5f6f6a" }}>{c.lastError}</div>}
                         <div style={s.actions}>
                           <button type="button" disabled={Boolean(busy)} onClick={() => fetchNow({ account, platform: name, weeks }, key)} style={s.small}>
                             {busy === key ? "Fetching…" : "Fetch now"}
