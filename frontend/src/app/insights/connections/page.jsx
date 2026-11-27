@@ -17,6 +17,9 @@ const PLATFORMS = [
   { name: "Instagram", Icon: LuInstagram, color: "#e1306c", what: "Instagram professional account" },
   { name: "YouTube", Icon: LuYoutube, color: "#ff0000", what: "YouTube channel (Google account)" },
 ];
+// Platforms not offered for a company here (e.g. Mayank's Facebook and Instagram are personal — not tracked)
+const HIDDEN = { Mayank: ["Facebook", "Instagram"] };
+const platformsFor = (account) => PLATFORMS.filter((p) => !(HIDDEN[account] || []).includes(p.name));
 const when = (d) => (d ? new Date(d).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }) : "—");
 const weekLabel = (start) => (start ? fmtRange(start, new Date(Date.parse(start) + 6 * 86400000).toISOString().slice(0, 10)) : "—");
 
@@ -141,7 +144,7 @@ export default function ConnectionsPage() {
           {accounts.map((account) => (
             <div key={account} style={s.company}>
               <div style={s.companyName}>{account}</div>
-              {PLATFORMS.map(({ name, Icon, color, what }) => {
+              {platformsFor(account).map(({ name, Icon, color, what }) => {
                 const c = find(account, name);
                 const key = `${account}|${name}`;
                 const chip = !c ? ["Not connected", "#efeff4", theme.muted] : c.status === "error" ? ["Error", theme.redSoft, theme.red] : ["Connected", theme.greenSoft, theme.green];
