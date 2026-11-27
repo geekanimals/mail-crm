@@ -57,6 +57,7 @@ const IG_TOTALS = [
   ["saves", "saves"],
   ["interactions", "total_interactions"],
   ["visits", "profile_views"],
+  ["linkClicks", "profile_links_taps"], // taps on the links on the profile
 ];
 
 export async function instagramWeek(igId, token, { start, end }) {
@@ -135,4 +136,62 @@ export async function facebookWeek(pageId, token, { start, end }) {
 
   if (!Object.keys(values).length) throw new MetaError("Meta returned no numbers for this week" + (notes.length ? ` (${notes[0]})` : ""));
   return { values: noNegatives(values, notes), notes };
+}
+
+// ---------- Check (read-only, nothing saved) ----------
+// Why Business Suite "Views" can be bigger than the API's views: it can add the Facebook views of
+// reels shared to Facebook. This lists the week's total from the API, its breakdown, and for every
+// post/reel published in or shortly before the week: Instagram views, Facebook views, both together.
+export async function instagramCheck(igId, token, { start, end }) {
+  const since = unix(start);
+  const until = unix(addDays(end, 1));
+  const out = { week: { start, end }, account: {}, breakdown: {}, media: [], notes: [] };
+  const total = (metric, extra = {}) =>
+    graphGet(`${IG_GRAPH()}/${igId}/insights`, { metric, period: "day", metric_type: "total_value", since, until, access_token: token, ...extra });
+
+  for (const m of ["views", "reach", "total_interactions", "profile_links_taps"]) {
+    const v = await tryMetric(async () => (await total(m)).data?.[0]?.total_value?.value, out.notes, m);
+    if (typeof v === "number") out.account[m] = v;
+  }
+  for (const b of ["media_product_type", "follow_type"]) {
+    const r = await tryMetric(() => total("views", { breakdown: b }), out.notes, `views by ${b}`);
+    const rows = r?.data?.[0]?.total_value?.breakdowns?.[0]?.results || [];
+    out.breakdown[b] = Object.fromEntries(rows.map((x) => [x.dimension_values.join(" / "), x.value]));
+  }
+
+  // media published from 4 weeks before the week to its end (older reels can still get views this week)
+  const from = addDays(start, -28);
+  let next = `${IG_GRAPH()}/${igId}/media`;
+  let query = { fields: "id,timestamp,media_type,media_product_type,permalink", limit: 50, access_token: token };
+  const list = [];
+  for (let page = 0; page < 6 && next; page++) {
+    const r = await graphGet(next, query);
+    for (const p of r.data || []) {
+      const day = new Date(Date.parse(p.timestamp) + 5.5 * 3600 * 1000).toISOString().slice(0, 10);
+      if (day >= from && day <= end) list.push({ ...p, day });
+    }
+    const oldest = (r.data || []).at(-1);
+    if (!oldest || oldest.timestamp.slice(0, 10) < from) break;
+    next = r.paging?.next;
+    query = {};
+  }
+  for (const p of list) {
+    const row = { day: p.day, type: p.media_product_type || p.media_type, link: p.permalink };
+    for (const m of ["views", "facebook_views", "crossposted_views"]) {
+      const v = await tryMetric(async () => {
+        const r = await graphGet(`${IG_GRAPH()}/${p.id}/insights`, { metric: m, access_token: token });
+        return r.data?.[0]?.values?.[0]?.value ?? r.data?.[0]?.total_value?.value;
+      }, out.notes, `${m} (${p.day})`);
+      if (typeof v === "number") row[m] = v;
+    }
+    out.media.push(row);
+  }
+  const sum = (k, rows) => rows.reduce((t, r) => t + (r[k] || 0), 0);
+  const inWeek = out.media.filter((r) => r.day >= start && r.day <= end);
+  out.totals = {
+    weekPosts: { count: inWeek.length, instagram: sum("views", inWeek), facebook: sum("facebook_views", inWeek), both: sum("crossposted_views", inWeek) },
+    last5Weeks: { count: out.media.length, instagram: sum("views", out.media), facebook: sum("facebook_views", out.media), both: sum("crossposted_views", out.media) },
+  };
+  out.notes = out.notes.slice(0, 10);
+  return out;
 }

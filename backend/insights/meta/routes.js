@@ -4,11 +4,14 @@
 import { Router } from "express";
 import mongoose from "mongoose";
 import { asyncHandler } from "../utils/asyncHandler.js";
+import { addDays } from "../utils/dates.js";
 import { badRequest, notFound } from "../utils/httpError.js";
 import { Connection } from "../models/Connection.js";
 import { SyncLog } from "../models/SyncLog.js";
 import { choosePage, facebookPages, frontendUrl, instagramConnect, keepPending, loginUrl, metaSetup, readPending, readState } from "./auth.js";
 import { readyWeek, syncNow } from "./sync.js";
+import { freshToken } from "./auth.js";
+import { instagramCheck } from "./fetch.js";
 
 export const connectRoutes = Router();
 
@@ -42,6 +45,18 @@ connectRoutes.post(
     const conn = await choosePage(req.params.id, String(req.body?.pageId || ""));
     const [first] = await syncNow({ account: conn.account, platform: conn.platform, weeks: 1 });
     res.json({ connection: conn, firstFetch: first });
+  })
+);
+
+// Check (read-only): Instagram views of one week, broken down, with Facebook views of crossposted reels
+// GET /check?account=GBTG&week=2026-11-16   (week = Monday; default the last finished week)
+connectRoutes.get(
+  "/check",
+  asyncHandler(async (req, res) => {
+    const conn = await Connection.findOne({ account: String(req.query.account || ""), platform: "Instagram" });
+    if (!conn) throw notFound("This company has no Instagram connected");
+    const week = req.query.week ? { start: String(req.query.week), end: addDays(String(req.query.week), 6) } : readyWeek();
+    res.json(await instagramCheck(conn.externalId, await freshToken(conn), week));
   })
 );
 

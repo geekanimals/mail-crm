@@ -7,7 +7,7 @@ process.env.INSIGHTS_MONGODB_URI ||= "mongodb://127.0.0.1:1/insights-test"; // n
 
 const { readyWeek, mergeIntoFileWeek, SOURCE } = await import("../meta/sync.js");
 const { encrypt, decrypt, sign, verify } = await import("../utils/secret.js");
-const { instagramWeek, facebookWeek } = await import("../meta/fetch.js");
+const { instagramWeek, facebookWeek, instagramCheck } = await import("../meta/fetch.js");
 
 test("ready week: the last Monday–Sunday that Meta has finished counting", () => {
   assert.deepEqual(readyWeek("2026-11-24"), { start: "2026-11-16", end: "2026-11-22" }); // Tuesday
@@ -105,4 +105,30 @@ test("uploaded week: file numbers stay on every fetch (also the 2nd), Meta only 
   assert.equal(week.comments, 49);
   assert.equal(week.sourceFiles.filter((f) => f === SOURCE).length, 1);
   assert.match(second, /kept from file: views 4\.1L \(Meta 80\.0K\)/);
+});
+
+test("Check: week views, breakdown, and Instagram + Facebook views of each reel (read-only)", async () => {
+  globalThis.fetch = async (url) => {
+    const u = new URL(url);
+    const metric = u.searchParams.get("metric");
+    const path = u.pathname;
+    let body;
+    if (path.endsWith("/media")) body = { data: [
+      { id: "m1", timestamp: "2026-11-17T06:00:00+0000", media_product_type: "REELS", permalink: "https://ig/1" },
+      { id: "m2", timestamp: "2026-11-19T06:00:00+0000", media_product_type: "FEED", permalink: "https://ig/2" },
+      { id: "m0", timestamp: "2026-09-01T06:00:00+0000", media_product_type: "FEED", permalink: "https://ig/0" },
+    ] };
+    else if (path.includes("/m1/")) body = { views: { data: [{ values: [{ value: 9000 }] }] }, facebook_views: { data: [{ values: [{ value: 10000 }] }] }, crossposted_views: { data: [{ values: [{ value: 19000 }] }] } }[metric];
+    else if (path.includes("/m2/")) body = metric === "views" ? { data: [{ values: [{ value: 1200 }] }] } : { error: { code: 100, message: "metric not supported for this media" } };
+    else if (u.searchParams.get("breakdown") === "media_product_type") body = { data: [{ total_value: { value: 18100, breakdowns: [{ results: [{ dimension_values: ["REEL"], value: 15000 }, { dimension_values: ["POST"], value: 3100 }] }] } }] };
+    else if (u.searchParams.get("breakdown")) body = { data: [{ total_value: { value: 18100, breakdowns: [{ results: [] }] } }] };
+    else body = { views: { data: [{ total_value: { value: 18100 } }] }, profile_links_taps: { data: [{ total_value: { value: 3 } }] } }[metric] ?? { error: { code: 100, message: "no" } };
+    return new Response(JSON.stringify(body), { status: body.error ? 400 : 200 });
+  };
+  const r = await instagramCheck("1789", "tok", { start: "2026-11-16", end: "2026-11-22" });
+  assert.equal(r.account.views, 18100);
+  assert.equal(r.account.profile_links_taps, 3);
+  assert.deepEqual(r.breakdown.media_product_type, { REEL: 15000, POST: 3100 });
+  assert.equal(r.media.length, 2); // the September post is outside the 5 weeks
+  assert.deepEqual(r.totals.weekPosts, { count: 2, instagram: 10200, facebook: 10000, both: 19000 });
 });
