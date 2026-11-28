@@ -6,6 +6,7 @@ import mongoose from "mongoose";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { addDays } from "../utils/dates.js";
 import { badRequest, notFound } from "../utils/httpError.js";
+import { verify } from "../utils/secret.js";
 import { Connection } from "../models/Connection.js";
 import { SyncLog } from "../models/SyncLog.js";
 import { choosePage, facebookPages, frontendUrl, instagramConnect, keepPending, loginUrl, metaSetup, readPending, readState, youtubeConnect } from "./auth.js";
@@ -42,7 +43,20 @@ connectRoutes.get(
 connectRoutes.post(
   "/pending/:id",
   asyncHandler(async (req, res) => {
-    const conn = await choosePage(req.params.id, String(req.body?.pageId || ""));
+    let conn;
+    try {
+      conn = await choosePage(req.params.id, String(req.body?.pageId || ""));
+    } catch (e) {
+      let account = "";
+      try {
+        account = readPending(req.params.id).account;
+      } catch {
+        /* the list expired — account unknown */
+      }
+      await logConnect({ account, platform: "Facebook", ok: false, message: `Picking the Page failed: ${e.message}` });
+      throw e;
+    }
+    await logConnect({ account: conn.account, platform: "Facebook", ok: true, message: `Connected Page "${conn.name}"` });
     const [first] = await syncNow({ account: conn.account, platform: conn.platform, weeks: 1 });
     res.json({ connection: conn, firstFetch: first });
   })
@@ -84,38 +98,53 @@ export const oauthRoutes = Router();
 
 const back = (res, params) => res.redirect(`${frontendUrl()}/insights/connections?${new URLSearchParams(params)}`);
 
+// Every connect attempt is written to the history (and the server log), so a failed login never disappears silently
+export async function logConnect({ account, platform, ok, message }) {
+  if (!ok) console.error(`[insights] Connect failed for ${account || "?"} · ${platform}: ${message}`);
+  await SyncLog.create({ account: account || "—", platform, ok, trigger: "connect", message }).catch(() => {});
+}
+const accountOf = (state) => verify(String(state || ""))?.account || "";
+
+async function failed(res, req, platform, message) {
+  await logConnect({ account: accountOf(req.query.state), platform, ok: false, message });
+  back(res, { error: message });
+}
+
 oauthRoutes.get("/facebook/callback", async (req, res) => {
   try {
-    if (req.query.error) return back(res, { error: String(req.query.error_description || "Facebook login was cancelled") });
+    if (req.query.error) return failed(res, req, "Facebook", String(req.query.error_description || "Facebook login was cancelled"));
     const state = readState(req.query.state, "Facebook");
     const pages = await facebookPages(String(req.query.code || ""));
-    if (!pages.length) return back(res, { error: "No Facebook Pages were shared — log in again and tick the company's Page" });
+    if (!pages.length) return failed(res, req, "Facebook", "Facebook login worked, but no Facebook Page was shared — connect again and tick the company's Page (the login must be a Page admin)");
+    await logConnect({ account: state.account, platform: "Facebook", ok: true, message: `Logged in — ${pages.length} Page${pages.length === 1 ? "" : "s"} shared (${pages.map((p) => p.name).join(", ")}). Waiting for the Page to be picked.` });
     back(res, { pick: keepPending(state, pages), account: state.account });
   } catch (e) {
-    back(res, { error: e.message });
+    await failed(res, req, "Facebook", e.message);
   }
 });
 
 oauthRoutes.get("/instagram/callback", async (req, res) => {
   try {
-    if (req.query.error) return back(res, { error: String(req.query.error_description || "Instagram login was cancelled") });
+    if (req.query.error) return failed(res, req, "Instagram", String(req.query.error_description || "Instagram login was cancelled"));
     const state = readState(req.query.state, "Instagram");
     const conn = await instagramConnect(String(req.query.code || "").replace(/#_$/, ""), state);
+    await logConnect({ account: conn.account, platform: "Instagram", ok: true, message: `Connected ${conn.name || "the Instagram account"}` });
     const [first] = await syncNow({ account: conn.account, platform: "Instagram", weeks: 1 });
     back(res, { connected: "Instagram", account: conn.account, name: conn.name, fetched: first?.ok ? "1" : "0" });
   } catch (e) {
-    back(res, { error: e.message });
+    await failed(res, req, "Instagram", e.message);
   }
 });
 
 oauthRoutes.get("/youtube/callback", async (req, res) => {
   try {
-    if (req.query.error) return back(res, { error: req.query.error === "access_denied" ? "YouTube login was cancelled" : String(req.query.error) });
+    if (req.query.error) return failed(res, req, "YouTube", req.query.error === "access_denied" ? "YouTube login was cancelled" : String(req.query.error));
     const state = readState(req.query.state, "YouTube");
     const conn = await youtubeConnect(String(req.query.code || ""), state);
+    await logConnect({ account: conn.account, platform: "YouTube", ok: true, message: `Connected ${conn.name || "the YouTube channel"}` });
     const [first] = await syncNow({ account: conn.account, platform: "YouTube", weeks: 1 });
     back(res, { connected: "YouTube", account: conn.account, name: conn.name, fetched: first?.ok ? "1" : "0" });
   } catch (e) {
-    back(res, { error: e.message });
+    await failed(res, req, "YouTube", e.message);
   }
 });

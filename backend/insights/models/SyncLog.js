@@ -1,4 +1,4 @@
-// History of automatic / manual fetches from Meta (shown on the Connections page)
+// History shown on the Connections page: automatic / manual fetches, and every connect attempt (ok or failed)
 import mongoose from "mongoose";
 import { db } from "../db.js";
 
@@ -6,11 +6,11 @@ const syncLogSchema = new mongoose.Schema(
   {
     account: String,
     platform: String,
-    week: String,
-    end: String,
+    week: { type: String, default: "" }, // empty for connect attempts
+    end: { type: String, default: "" },
     ok: Boolean,
     message: String, // what was saved, or the error in plain words
-    trigger: { type: String, enum: ["auto", "manual"], default: "auto" },
+    trigger: { type: String, enum: ["auto", "manual", "connect"], default: "auto" },
   },
   { timestamps: true }
 );

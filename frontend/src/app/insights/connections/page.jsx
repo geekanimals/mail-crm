@@ -209,9 +209,9 @@ export default function ConnectionsPage() {
                     <td style={s.td}>{when(l.createdAt)}</td>
                     <td style={s.td}>{l.account}</td>
                     <td style={s.td}>{l.platform}</td>
-                    <td style={s.td}>{fmtRange(l.week, l.end)}</td>
+                    <td style={s.td}>{l.week ? fmtRange(l.week, l.end) : "—"}</td>
                     <td style={{ ...s.td, color: l.ok ? theme.green : theme.red, whiteSpace: "normal", minWidth: 260 }}>{l.ok ? "✓ " : "⚠ "}{l.message}</td>
-                    <td style={{ ...s.td, color: theme.faint }}>{l.trigger}</td>
+                    <td style={{ ...s.td, color: theme.faint }}>{l.trigger === "connect" ? "connect" : l.trigger}</td>
                   </tr>
                 ))}
               </tbody>
