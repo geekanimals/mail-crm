@@ -7,6 +7,7 @@ import { LuBuilding2, LuCheck, LuCopy, LuExternalLink, LuHandshake, LuKeyRound, 
 import { api, date, notify } from '@/lib/api';
 import { label, Value } from '@/components/PersonDetails';
 import { openFile, uploadFile } from '@/lib/hr';
+import ClientDocs from '@/components/ClientDocs';
 
 // sheet columns about the person (shown on their own tab), not the company
 const PERSON_COL = /^(dm[\s_]|email[\s_]|e-?mail$|name$|first[\s_]?name|last[\s_]?name|phone$|designation$)/i;
@@ -58,11 +59,12 @@ export default function CompanyDetails({ id, onClose, convertFirst, inline = fal
   const [check, setCheck] = useState(null); // convert checklist: [{ label, done, file }]
   const [links, setLinks] = useState(null); // { crm, bounty } for the login message
   const [mailing, setMailing] = useState(false);
+  const [flow, setFlow] = useState(null); // agreement -> estimate -> payment (ClientDocs)
   useEffect(() => {
     if (!conv || check) return;
     api('/api/companies/convert/checklist')
       .then((r) => {
-        setCheck(r.items.map((label) => ({ label, done: false, file: null })));
+        setCheck(r.items.filter((l) => !/estimate|\bgst\b/i.test(l)).map((label) => ({ label, done: false, file: null }))); // the estimate and the GST number come from the estimate step
         setLinks(r.links);
       })
       .catch((e) => notify(e.message, 'error'));
@@ -197,7 +199,9 @@ export default function CompanyDetails({ id, onClose, convertFirst, inline = fal
         {['cold', 'hot'].includes(c.stage) ? (
           <p className="pl-hint">A company becomes an account after it is an <b>Opportunity</b>. It moves forward on its own when people reply (1st reply → Hot lead, more replies → Opportunity), or change the stage below.</p>
         ) : c.stage === 'opportunity' ? (
-          conv ? (
+          <>
+          <ClientDocs companyId={id} onFlow={setFlow} onChanged={load} />
+          {conv && flow?.paymentReceived ? (
             <form className="pl-convertbox" onSubmit={convert}>
               <b><LuHandshake /> Convert {c.name} to an account</b>
               <div className="pl-check">
@@ -232,13 +236,16 @@ export default function CompanyDetails({ id, onClose, convertFirst, inline = fal
                   </label>
                 )}
               </div>
-              <p className="small muted">The estimate is done here, so the deal starts at the Purchase order step and its owner gets that task (see Deals → Step owners). An estimate file attached above is saved with the deal.</p>
-              <div className="row"><button className="btn sm" disabled={busy || !allTicked} title={allTicked ? '' : 'Tick everything on the checklist first'}><LuHandshake /> {busy ? 'Converting…' : 'Convert to account'}</button><button type="button" className="btn ghost sm" onClick={() => { setConv(null); setCheck(null); }}>Cancel</button></div>
+              <p className="small muted">The agreement, the estimate{flow?.estimate?.number ? ` ${flow.estimate.number}` : ''} (₹{Math.round(flow?.total || 0).toLocaleString('en-IN')}) and the advance are done, so the deal starts at Execution with their PDFs and the payment, and its owner gets that task (see Deals → Step owners).</p>
+              <div className="row"><button className="btn sm" disabled={busy || !allTicked || !flow?.paymentReceived} title={!flow?.paymentReceived ? 'Agreement, estimate and payment first' : allTicked ? '' : 'Tick everything on the checklist first'}><LuHandshake /> {busy ? 'Converting…' : 'Convert to account'}</button><button type="button" className="btn ghost sm" onClick={() => { setConv(null); setCheck(null); }}>Cancel</button></div>
             </form>
           ) : (
-            <button className="btn pl-convertbtn" onClick={() => setConv({ name: d.contacts[0]?.name || c.name, email: d.contacts.find((p) => p.email)?.email || '', password: makePassword() })}><LuHandshake /> Convert to account</button>
-          )
+            <button className="btn pl-convertbtn" disabled={!flow?.paymentReceived} title={flow?.paymentReceived ? '' : 'Opens after the agreement is accepted, the estimate is sent and the advance is received'} onClick={() => setConv({ name: d.contacts[0]?.name || c.name, email: d.contacts.find((p) => p.email)?.email || '', password: makePassword() })}><LuHandshake /> Convert to account</button>
+          )}
+          </>
         ) : (
+          <>
+          <ClientDocs companyId={id} historyOnly />
           <div className="pl-login">
             <b><LuKeyRound /> Client login</b>
             {conv ? (
@@ -266,6 +273,7 @@ export default function CompanyDetails({ id, onClose, convertFirst, inline = fal
               <button className="btn soft sm" onClick={() => setConv({ name: d.contacts[0]?.name || c.name, email: d.contacts.find((p) => p.email)?.email || '', password: makePassword() })}>Create client login</button>
             )}
           </div>
+          </>
         )}
 
         {c.onboarding?.items?.length > 0 && (

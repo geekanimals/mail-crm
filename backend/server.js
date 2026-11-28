@@ -25,6 +25,8 @@ import dealRoutes from './routes/deals.js';
 import ideaRoutes from './routes/ideas.js';
 import newsletterRoutes from './routes/newsletter.js';
 import newsletterPublic from './routes/newsletter-public.js';
+import documentRoutes from './routes/documents.js';
+import agreementPublic from './routes/agreement-public.js';
 import { admin as websiteLeadRoutes, hook as websiteLeadHook } from './routes/website-leads.js';
 import insightsRoutes, { ensureDefaultAccounts, insightsOAuthRoutes, startMetaTimer } from './insights/index.js';
 import { Company, Contact, Notification, Reply, getSetting, setSetting } from './models.js';
@@ -66,6 +68,7 @@ app.use(['/api/files', '/api/contacts/import', '/api/contacts/import-continue', 
 app.use('/api/settings/test-email', testEmailLimit);
 
 app.use('/api/public/website-lead', websiteLeadLimit, websiteLeadHook); // the website's client form (shared secret, no login)
+app.use('/api/public/agreement', publicLimit, agreementPublic); // the client's "Review & accept" link (no login)
 app.use('/api/auth', authRoutes);
 app.use('/api/portal', requireAuth, portalRoutes); // team members + clients
 app.use('/api/me', requireAuth, meRoutes); // employee portal (team members)
@@ -82,6 +85,7 @@ app.use('/api/companies', ...admin, companyRoutes);
 app.use('/api/team', ...admin, teamRoutes);
 app.use('/api/hr', ...admin, hrRoutes);
 app.use('/api/newsletter', ...admin, newsletterRoutes);
+app.use('/api/documents', ...admin, documentRoutes); // agreement -> estimate -> payment before an account
 app.use('/api/website-leads', requireAuth, websiteLeadRoutes); // admin: every form; an employee: the forms given to them (checked inside)
 app.use('/api', ...admin, dashboardRoutes);
 

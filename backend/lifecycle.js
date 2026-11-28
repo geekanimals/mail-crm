@@ -199,11 +199,30 @@ async function emailDocument(deal, doc, { subject, intro }) {
 /* ---------------- start a deal (company converted to an account) ---------------- */
 // estimateDone: the estimate was ticked on the convert checklist, so the deal starts at the PO step
 // (estimateFile: its file, if one was attached there - it becomes the deal's estimate document)
-export async function startDeal(company, { by = 'Admin', contract, estimateDone = false, estimateFile = null, estimateAmount = 0 } = {}) {
+export async function startDeal(company, { by = 'Admin', contract, estimateDone = false, estimateFile = null, estimateAmount = 0, flow = null } = {}) {
   let deal = await Deal.findOne({ company: company._id, step: { $ne: 'complete' } });
   if (!deal) {
-    deal = new Deal({ company: company._id, title: company.name, step: estimateDone ? 'po' : 'estimate' });
+    deal = new Deal({ company: company._id, title: company.name, step: flow ? 'execution' : estimateDone ? 'po' : 'estimate' });
     note(deal, by, 'Contract signed – the company is now an account');
+    if (flow) {
+      // agreement accepted, estimate sent and advance received before the account: start at Execution with all of it
+      deal.value = Math.round(flow.total || 0);
+      deal.clientEmail = String(flow.estimate?.mail?.to || flow.agreement?.mail?.to || '').split(/[,;\s]+/)[0] || '';
+      const docs = [
+        flow.agreement && { kind: 'contract', name: flow.agreement.status === 'outside' ? 'Agreement (outside the CRM)' : `Agreement (accepted${flow.agreement.accepted?.name ? ` by ${flow.agreement.accepted.name}` : ''})`, file: flow.agreement.signedFile?.id ? flow.agreement.signedFile : flow.agreement.file },
+        flow.estimate && { kind: 'estimate', name: `Estimate ${flow.estimate.number || ''}`.trim(), number: flow.estimate.number || '', amount: Math.round(flow.estimate.estimate?.total || 0), file: flow.estimate.file, emailedTo: flow.estimate.sentTo || '', emailedAt: flow.estimate.sentAt },
+      ].filter(Boolean);
+      for (const d of docs) {
+        const f = d.file?.id && mongoose.isValidObjectId(d.file.id) ? await HrFile.findById(d.file.id) : null;
+        if (f) {
+          f.owner = deal._id; // the deal's team can open it like any deal document
+          await f.save();
+        }
+        deal.documents.push({ ...d, file: f ? { id: String(f._id), name: f.name, size: f.size, type: f.type } : undefined, by });
+      }
+      for (const p of flow.company?.payments || []) deal.payments.push({ kind: 'advance', amount: p.amount, date: p.date, reference: p.reference, by: p.by || by });
+      note(deal, by, `Agreement, estimate ${flow.estimate?.number || ''} (₹${Math.round(flow.total || 0).toLocaleString('en-IN')}) and advance ₹${Math.round(flow.paid || 0).toLocaleString('en-IN')} done before the account – starting at Execution`);
+    }
     if (estimateDone) {
       const amount = Math.max(0, Math.round(Number(estimateAmount) || 0));
       if (amount) deal.value = amount; // the estimate amount is the deal value (balance = value - payments)

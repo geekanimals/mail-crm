@@ -36,8 +36,8 @@ const REFERRAL_FOLLOW_UPS = [
 ];
 const REFERRAL_INTRO = { key: 'referral_intro', name: 'Referral intro', body: 'Hi {{firstName}},\n\n{{referrer}} suggested I get in touch with you about creator campaigns for {{company}}.\n\nWe run influencer campaigns with micro and nano creators who are paid in product, so each extra creator costs a unit of stock plus our fee. We have done this for brands like PepsiCo.\n\nWould you be open to a quick 15-minute call this week?' };
 
-const KIND = { reply: 'Reply', meeting: 'Meeting found', meeting_outcome: 'How was the meeting?', manual: 'Emailed by hand', referral: 'Referral', estimate: 'Estimate sent' };
-const SUGGEST = { later: 'Future follow-up', not_interested: 'Not interested', ooo: 'Out of office', hot: 'Hot lead', meeting: 'Set the meeting', outcome: '', manual: 'Move the next system email to', referral: 'Email them', estimate: 'Move to Opportunity', meeting_move: 'Move the meeting to', meeting_cancel: 'Mark the meeting cancelled' };
+const KIND = { reply: 'Reply', meeting: 'Meeting found', meeting_outcome: 'How was the meeting?', manual: 'Emailed by hand', referral: 'Referral', estimate: 'Estimate sent', agreement: 'Agreement', payment: 'Payment' };
+const SUGGEST = { later: 'Future follow-up', not_interested: 'Not interested', ooo: 'Out of office', hot: 'Hot lead', meeting: 'Set the meeting', outcome: '', manual: 'Move the next system email to', referral: 'Email them', estimate: 'Move to Opportunity', meeting_move: 'Move the meeting to', meeting_cancel: 'Mark the meeting cancelled', agreement_accepted: 'Make and send the estimate', agreement_changes: 'Revise the agreement and send it again', payment: 'Has the advance come?' };
 const REASONS = [['budget', 'No budget'], ['agency', 'Has an agency / in-house team'], ['not_relevant', 'Not relevant'], ['other', 'Other']];
 const CHOICES = {
   reply: [['later', 'Future follow-up'], ['not_interested', 'Not interested'], ['ooo', 'Out of office'], ['hot', 'Hot lead (interested)'], ['nothing', 'Do nothing']],
@@ -47,10 +47,13 @@ const CHOICES = {
   estimate: [['opportunity', 'Move to Opportunity'], ['nothing', 'No change']],
   meeting_move: [['set', 'Move it'], ['nothing', 'Keep the old time']],
   meeting_cancel: [['cancel', 'Mark it cancelled'], ['nothing', 'Keep it']],
+  agreement_accepted: [['estimate', 'Make the estimate'], ['later', 'Later']],
+  agreement_changes: [['revise', 'Revise the agreement'], ['later', 'Later']],
+  payment: [['received', 'Payment received'], ['not_yet', 'Not yet']],
   meeting_outcome: [['deal', 'Deal done'], ['details', 'Wants more details'], ['get_back', 'Will get back on a date'], ['later', 'Follow up later'], ['not_interested', 'Not interested'], ['didnt_happen', "Didn't happen"]],
 };
 
-const choicesFor = (a) => (a.kind === 'meeting' && ['meeting_move', 'meeting_cancel'].includes(a.suggestion?.type) ? CHOICES[a.suggestion.type] : CHOICES[a.kind] || []);
+const choicesFor = (a) => (a.kind === 'agreement' ? CHOICES[a.suggestion?.type === 'agreement_changes' ? 'agreement_changes' : 'agreement_accepted'] : a.kind === 'meeting' && ['meeting_move', 'meeting_cancel'].includes(a.suggestion?.type) ? CHOICES[a.suggestion.type] : CHOICES[a.kind] || []);
 
 const startMsg = (templates, a, key) => {
   const t = templates.find((x) => x.key === key) || templates[0];
@@ -91,7 +94,7 @@ function ActionCard({ a, settings, onDone, admin = true }) {
   // emailed by hand: is the next system email already on (or after) the day the CRM would move it to?
   const nextDue = a.kind === 'manual' ? a.decision?.held?.next : null;
   const asPlanned = Boolean(a.kind === 'manual' && nextDue && s.date && ymd(s.date) <= ymd(nextDue));
-  const sug = a.kind === 'manual' && asPlanned ? 'as_planned' : a.kind === 'reply' ? (['later', 'not_interested', 'ooo', 'hot'].includes(s.type) ? s.type : 'hot') : a.kind === 'meeting' ? (s.type === 'meeting_cancel' ? 'cancel' : 'set') : a.kind === 'manual' ? 'continue' : a.kind === 'referral' ? 'email' : a.kind === 'estimate' ? 'opportunity' : '';
+  const sug = a.kind === 'agreement' ? (s.type === 'agreement_changes' ? 'revise' : 'estimate') : a.kind === 'payment' ? 'received' : a.kind === 'manual' && asPlanned ? 'as_planned' : a.kind === 'reply' ? (['later', 'not_interested', 'ooo', 'hot'].includes(s.type) ? s.type : 'hot') : a.kind === 'meeting' ? (s.type === 'meeting_cancel' ? 'cancel' : 'set') : a.kind === 'manual' ? 'continue' : a.kind === 'referral' ? 'email' : a.kind === 'estimate' ? 'opportunity' : '';
   const [choice, setChoice] = useState(sug);
   const [f, setF] = useState(() => ({
     date: ymd(s.date || (s.type === 'later' ? plusMonths(settings.laterMonths) : null)),
@@ -110,6 +113,10 @@ function ActionCard({ a, settings, onDone, admin = true }) {
     winMsg: startMsg(settings.templates, a, 'checking_in'),
     planFollowUp: true,
     notes: '',
+    amount: a.decision?.due ? String(a.decision.due) : '', // payment received
+    payDate: ymd(new Date()),
+    reference: '',
+    askAgain: ymd(ahead(3)),
   }));
   const [busy, setBusy] = useState(false);
   const set = (patch) => setF((x) => ({ ...x, ...patch }));
@@ -148,6 +155,11 @@ function ActionCard({ a, settings, onDone, admin = true }) {
     if (choice === 'continue' && !body.date) return notify('Choose the date', 'error');
     if (choice === 'set' || choice === 'didnt_happen') body.at = fromDateTime(f.at);
     if (choice === 'set' && !body.at) return notify('Choose the meeting time', 'error');
+    if (choice === 'received') {
+      if (!(Number(String(f.amount).replace(/[,₹\s]/g, '')) > 0)) return notify('Enter the amount received', 'error');
+      Object.assign(body, { amount: f.amount, date: f.payDate, reference: f.reference });
+    }
+    if (choice === 'not_yet') body.date = fromDate(f.askAgain);
     setBusy(true);
     try {
       const out = await api(`/api/actions/${a._id}/decide`, { method: 'POST', body });
@@ -160,6 +172,7 @@ function ActionCard({ a, settings, onDone, admin = true }) {
       notify('Done ✓');
       onDone(out);
       if (out.decision?.convert && admin) window.location.href = out.decision.convert;
+      if (out.decision?.goto && admin && choice !== 'later') window.location.href = out.decision.goto; // agreement / estimate: on the company page
     } catch (e) {
       notify(e.message, 'error');
     }
@@ -173,7 +186,7 @@ function ActionCard({ a, settings, onDone, admin = true }) {
       <div className="ny-top">
         <span className={`ny-kind k-${a.kind}`}>{a.kind === 'reply' ? <LuReply /> : <LuCalendarClock />} {KIND[a.kind]}</span>
         <b className="ny-who">{who}{a.company && a.contact ? <> · {admin ? <Link href={`/lead?company=${a.company._id}`}>{a.company.name}</Link> : a.company.name}</> : null}</b>
-        <small className="muted">{late ? 'Waiting for 2+ days · ' : ''}{a.emailAt ? `${['manual', 'estimate'].includes(a.kind) || /^Sent by hand/.test(a.quote || '') ? 'Sent' : 'Received'} ${dayTime(a.emailAt)}` : dayTime(a.createdAt)}</small>
+        <small className="muted">{late ? 'Waiting for 2+ days · ' : ''}{a.emailAt ? `${a.kind === 'payment' ? 'Estimate sent' : a.kind === 'agreement' ? (s.type === 'agreement_changes' ? 'Changes asked' : 'Accepted') : ['manual', 'estimate'].includes(a.kind) || /^Sent by hand/.test(a.quote || '') ? 'Sent' : 'Received'} ${dayTime(a.emailAt)}` : dayTime(a.createdAt)}</small>
       </div>
       {a.kind === 'meeting_outcome' && <p className="ny-line">Meeting on <b>{dayTime(a.meeting?.at || s.date)}</b>{a.meeting?.sources?.length ? ` · from ${a.meeting.sources.join(' + ')}` : ''}</p>}
       {a.quote && <blockquote className="ny-quote">{a.quote}</blockquote>}
@@ -277,7 +290,23 @@ function ActionCard({ a, settings, onDone, admin = true }) {
       )}
       {choice === 'opportunity' && <p className="ny-hint">The company moves to <b>Opportunity</b> and the proposal / contract task goes to its owner.</p>}
       {choice === 'cancel' && <p className="ny-hint">The meeting is marked cancelled. Set a new one from the lead page when it is booked again.</p>}
-      {choice === 'deal' && <p className="ny-hint">Opens <b>Convert to account</b> with the checklist.</p>}
+      {choice === 'deal' && <p className="ny-hint">Opens the company page: make the <b>agreement</b>, then the estimate and the advance payment, then convert it to an account.</p>}
+      {choice === 'estimate' && <p className="ny-hint">Opens the company page. The estimate gets the next number and the client’s details; nothing is sent until you press Send.</p>}
+      {choice === 'revise' && <p className="ny-hint">Opens the company page to make the next version of the agreement from this one. Nothing is sent until you press Send.</p>}
+      {choice === 'received' && (
+        <div className="ny-form">
+          <label className="ny-field">Amount received (₹) <input inputMode="numeric" value={f.amount} onChange={(e) => set({ amount: e.target.value })} /></label>
+          <label className="ny-field">Received on <input type="date" value={f.payDate} onChange={(e) => set({ payDate: e.target.value })} />{f.payDate && <small className="ny-inwords">{inWords(f.payDate)}</small>}</label>
+          <label className="ny-field">Reference (UTR / cheque, optional) <input value={f.reference} onChange={(e) => set({ reference: e.target.value })} /></label>
+          <p className="ny-hint">Saved on the company. Then tick the rest of the checklist and convert it to an account.</p>
+        </div>
+      )}
+      {choice === 'not_yet' && (
+        <div className="ny-form">
+          <label className="ny-field">Ask me again on <input type="date" value={f.askAgain} min={ymd(new Date())} onChange={(e) => set({ askAgain: e.target.value })} />{f.askAgain && <small className="ny-inwords">{inWords(f.askAgain)}</small>}</label>
+          <p className="ny-hint">The card hides until then and comes back.</p>
+        </div>
+      )}
 
       <div className="ny-bar">
         <button className="btn sm" disabled={busy || !choice} onClick={save}><LuCheck /> {busy ? 'Saving…' : 'Yes, do it'}</button>

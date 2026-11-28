@@ -172,7 +172,11 @@ router.delete(
     const { HrTask, HrFile } = await import('../hr-models.js');
     const { removeFile } = await import('./files.js');
     const deals = await Deal.find({ company: id }).select('_id').lean();
-    for (const f of await HrFile.find({ owner: { $in: deals.map((d) => d._id) } }).select('_id').lean()) await removeFile(String(f._id));
+    for (const f of await HrFile.find({ owner: { $in: [...deals.map((d) => d._id), id] } }).select('_id').lean()) await removeFile(String(f._id)); // deal files + agreement/estimate PDFs
+    const { ClientDoc } = await import('../documents.js');
+    await ClientDoc.deleteMany({ company: id }); // its agreements and estimates
+    const { Action } = await import('../actions.js');
+    await Action.deleteMany({ company: id }); // its Needs you cards
     await HrTask.deleteMany({ company: id });
     await Deal.deleteMany({ company: id });
     await Company.deleteOne({ _id: id });
@@ -223,8 +227,14 @@ router.post(
     const c = await Company.findById(checkId(req.params.id));
     if (!c) throw fail(404, 'Company not found');
     if (c.stage !== 'opportunity') throw fail(400, 'Only an Opportunity can be converted to an account. Move it to Opportunity first.');
-    // every checklist item must be ticked (a file is optional)
-    const need = await convertChecklist();
+    // agreement accepted -> estimate sent -> advance received, then the checklist
+    const { flowFor } = await import('./documents.js');
+    const flow = await flowFor(c._id);
+    if (!flow.agreed) throw fail(400, 'The agreement must be accepted first (Agreement & estimate on the company page)');
+    if (!flow.estimateSent) throw fail(400, 'The estimate must be sent first');
+    if (!flow.paymentReceived) throw fail(400, 'Mark the advance payment as received first');
+    // every other checklist item must be ticked (a file is optional); the estimate and the GST number come from the estimate step
+    const need = (await convertChecklist()).filter((l) => !/estimate|\bgst\b/i.test(l));
     const sent = Array.isArray(req.body?.checklist) ? req.body.checklist : [];
     const items = need.map((label) => {
       const s = sent.find((x) => String(x?.label || '').trim().toLowerCase() === label.toLowerCase());
@@ -234,15 +244,16 @@ router.post(
     });
     const missing = items.filter((i) => !i.done).map((i) => i.label);
     if (missing.length) throw fail(400, `Tick everything on the checklist first: ${missing.join(', ')}`);
-    const estItem = items.find((i) => /estimate/i.test(i.label));
-    if (estItem && !(estItem.amount > 0)) throw fail(400, 'Enter the estimate amount (it becomes the deal value)');
+    items.push({ label: `Estimate ${flow.estimate?.number || ''}`.trim(), done: true, amount: Math.round(flow.total) });
+    const gstNo = flow.estimate?.estimate?.billTo?.gst;
+    items.unshift({ label: gstNo ? `GST number ${gstNo}` : 'GST: the client has no GST number', done: true });
     const login = req.body?.email ? await saveClientLogin(c, req.body) : null; // login is optional
     c.onboarding = { items, at: new Date(), by: req.user || 'admin' };
     c.stage = 'account';
     await c.save();
     const contract = req.body?.contract?.id ? req.body.contract : null;
-    const est = items.find((i) => /estimate/i.test(i.label));
-    const deal = await startDeal(c, { by: req.user, contract, estimateDone: Boolean(est?.done), estimateFile: est?.file || null, estimateAmount: est?.amount || 0 }); // estimate ticked -> the deal starts at the PO step
+    // agreement, estimate and advance are done: the deal starts at Execution with their documents and the payment
+    const deal = await startDeal(c, { by: req.user, contract, flow });
     res.json({ company: c, clientLogin: login && { ...login.user.toJSON(), password: login.password, bounty: login.bounty }, deal: deal._id, links: { crm: crmLoginUrl(), bounty: BOUNTY_BRANDS_URL } });
   })
 );

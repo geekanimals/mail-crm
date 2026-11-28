@@ -88,6 +88,10 @@ export const Company = model(
         at: Date,
         by: String,
       },
+      // billing details for the agreement and the estimate (Bill To)
+      billing: { legalName: { type: String, default: '' }, address: { type: String, default: '' }, gst: { type: String, default: '' } },
+      // payments received before it became an account (the advance after the estimate)
+      payments: [{ kind: { type: String, default: 'advance' }, amount: Number, date: String, reference: String, estimate: String, by: String, at: { type: Date, default: () => new Date() } }],
     },
     { timestamps: true }
   )

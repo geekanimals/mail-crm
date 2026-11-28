@@ -49,7 +49,7 @@ router.get(
   '/',
   ah(async (req, res) => {
     const done = req.query.status === 'done';
-    const filter = { status: done ? { $in: ['done', 'dismissed'] } : 'open' };
+    const filter = { status: done ? { $in: ['done', 'dismissed'] } : 'open', ...(done ? {} : { $or: [{ snoozeUntil: null }, { snoozeUntil: { $lte: new Date() } }] }) };
     if (req.role !== 'admin') Object.assign(filter, { kind: { $ne: 'reply' }, assignees: req.account?._id });
     const list = await Action.find(filter).sort(done ? { decidedAt: -1 } : { createdAt: 1 }).limit(done ? 50 : 300).lean();
     res.json({ items: await shape(list), settings: await actionSettings() });
@@ -59,7 +59,7 @@ router.get(
 router.get(
   '/count',
   ah(async (req, res) => {
-    const filter = { status: 'open' };
+    const filter = { status: 'open', $or: [{ snoozeUntil: null }, { snoozeUntil: { $lte: new Date() } }] };
     if (req.role !== 'admin') Object.assign(filter, { kind: { $ne: 'reply' }, assignees: req.account?._id });
     const items = await Action.find(filter).select('createdAt').lean();
     res.json({ open: items.length, late: items.filter((a) => Date.now() - new Date(a.createdAt) > 2 * 86400000).length });
@@ -84,6 +84,8 @@ router.post(
       winbackDate: b.winbackDate || undefined,
       notes: str(b.notes, 5000) || undefined,
       template: str(b.template, 40) || undefined,
+      amount: b.amount !== undefined ? str(b.amount, 20) : undefined, // payment received
+      reference: str(b.reference, 120) || undefined,
       subject: str(b.subject, 300) || undefined,
       cc: b.cc === true,
       nextBodies: Array.isArray(b.nextBodies) ? b.nextBodies.slice(0, 3).map((x) => str(x, 20000)) : undefined,

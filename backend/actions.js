@@ -21,7 +21,8 @@ export const Action = model(
   'Action',
   new Schema(
     {
-      kind: { type: String, enum: ['reply', 'meeting', 'meeting_outcome', 'manual', 'referral', 'estimate'], required: true },
+      kind: { type: String, enum: ['reply', 'meeting', 'meeting_outcome', 'manual', 'referral', 'estimate', 'agreement', 'payment'], required: true },
+      snoozeUntil: Date, // "not yet": hidden until this date, then asked again
       status: { type: String, enum: ['open', 'done', 'dismissed'], default: 'open', index: true },
       contact: { type: id, ref: 'Contact', index: true },
       company: { type: id, ref: 'Company', index: true },
@@ -623,14 +624,36 @@ export async function decide(action, body = {}, by = 'admin') {
     if (choice === 'deal') {
       result.convert = `/lead?company=${action.company}&convert=1`;
       const c = await Company.findById(action.company).select('name').lean();
-      await notify('action', contact, { text: `${by}: the meeting with ${c?.name || 'the lead'} went well, deal done. Convert it to an account (checklist).` });
+      await notify('action', contact, { text: `${by}: the meeting with ${c?.name || 'the lead'} went well, deal done. Make the agreement (then the estimate, the advance and the account).` });
     }
     if (!['deal', 'didnt_happen', 'later', 'get_back', 'details', 'not_interested'].includes(choice)) throw Object.assign(new Error('Choose how the meeting went'), { status: 400 });
   }
 
+  // the agreement was accepted / changes were asked: the work is on the company page (agreement / estimate)
+  if (action.kind === 'agreement') {
+    if (!['estimate', 'revise', 'later'].includes(choice)) throw Object.assign(new Error('Choose what to do'), { status: 400 });
+    result.goto = `/lead?company=${action.company}&tab=company&docs=1`;
+  }
+  // has the advance come?
+  if (action.kind === 'payment') {
+    if (choice === 'not_yet') {
+      const until = body.date ? new Date(body.date) : new Date(Date.now() + 3 * 86400000);
+      if (Number.isNaN(until.getTime())) throw Object.assign(new Error('Choose the date to ask again'), { status: 400 });
+      action.snoozeUntil = until;
+      action.decision = { ...(action.decision || {}), lastAsked: new Date(), by };
+      action.markModified('decision');
+      await action.save();
+      return action; // stays open: asked again on that date
+    }
+    if (choice !== 'received') throw Object.assign(new Error('Choose what to do'), { status: 400 });
+    const { recordPayment } = await import('./routes/documents.js');
+    const p = await recordPayment(action.company, { amount: body.amount, date: body.date, reference: body.reference, by });
+    return Action.findById(action._id).then((a) => a || Object.assign(action, { status: 'done', decision: { ...(action.decision || {}), ...p } }));
+  }
+
   action.status = 'done';
   action.decision = { ...(action.decision || {}), ...body, ...result };
-  action.undo = undo;
+  action.undo = ['agreement', 'payment'].includes(action.kind) ? null : undo;
   action.decidedBy = by;
   action.decidedAt = new Date();
   await action.save();
@@ -939,5 +962,5 @@ export async function onManualEmail(contact, me) {
 }
 
 /* ---------------- what one person may see ---------------- */
-export const mayAnswer = (req, a) => req.role === 'admin' || (req.role === 'team' && !['reply', 'manual', 'referral', 'estimate'].includes(a.kind) && (a.assignees || []).some((u) => String(u) === String(req.account?._id)));
+export const mayAnswer = (req, a) => req.role === 'admin' || (req.role === 'team' && !['reply', 'manual', 'referral', 'estimate', 'agreement', 'payment'].includes(a.kind) && (a.assignees || []).some((u) => String(u) === String(req.account?._id)));
 export { User };

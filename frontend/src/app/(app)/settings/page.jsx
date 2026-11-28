@@ -2,6 +2,7 @@
 // Settings: connection status + emergency pause. All values come from the backend .env
 import { useCallback, useEffect, useState } from 'react';
 import NeedsSettings from '@/components/NeedsSettings';
+import DocSettings from '@/components/DocSettings';
 import { LuCircleCheck, LuMail, LuPause, LuPlay, LuRefreshCw, LuSend, LuZap } from 'react-icons/lu';
 import { api, date, notify } from '@/lib/api';
 
@@ -185,6 +186,8 @@ export default function SettingsPage() {
         </div>
 
         <NeedsSettings />
+
+        <DocSettings />
 
         <div className="card">
           <h2>Convert to account: checklist</h2>
