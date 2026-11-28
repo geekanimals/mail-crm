@@ -34,7 +34,7 @@ export default function ConnectionsPage() {
   const [note, setNote] = useState(
     back.connected
       ? `${back.connected} connected for ${back.account}${back.name ? " (" + back.name + ")" : ""}.` +
-          (back.fetched === "1" ? " Last week's numbers are already saved." : " The first fetch didn't work — see the history below.")
+          (back.fetched === "1" ? " Last week's numbers are saved; the 12 weeks before are being fetched in the background." : " The first fetch didn't work — see the history below.")
       : ""
   );
   const [busy, setBusy] = useState(""); // what is running, e.g. "GBTG|Instagram"
@@ -82,7 +82,7 @@ export default function ConnectionsPage() {
   const choose = (pageId) =>
     run("pick", () => api.metaChoosePage(pick.id, pageId), (r) => {
       setPick(null);
-      return `Facebook Page "${r.connection.name}" connected for ${r.connection.account}.` + (r.firstFetch?.ok ? " Last week's numbers are already saved." : "");
+      return `Facebook Page "${r.connection.name}" connected for ${r.connection.account}.` + (r.firstFetch?.ok ? " Last week's numbers are saved; the 12 weeks before are being fetched in the background." : "");
     });
 
   const conns = status?.connections || [];
@@ -183,7 +183,10 @@ export default function ConnectionsPage() {
                         <button type="button" disabled={Boolean(busy) || !setup?.[name.toLowerCase()]} onClick={() => connect(account, name)} style={s.connect}>
                           Connect {name}
                         </button>
-                        <span style={s.hint}>Log in with the account that manages this {what}</span>
+                        <span style={s.hint}>
+                          Log in with the account that manages this {what}
+                          {name === "Facebook" && " — tick every company Page each time (Facebook keeps only the Pages ticked in the latest login)"}
+                        </span>
                       </div>
                     )}
                   </div>

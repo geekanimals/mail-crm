@@ -126,6 +126,25 @@ export async function freshToken(conn) {
   return r.access_token;
 }
 
+// Facebook keeps only the Pages ticked in the latest login: every new login gives fresh tokens for the Pages
+// shared in it, so any company already connected to one of those Pages gets its login refreshed right away.
+export async function refreshFacebookPages(pages) {
+  const refreshed = [];
+  for (const p of pages) {
+    const conns = await Connection.find({ platform: "Facebook", externalId: p.id });
+    for (const c of conns) {
+      c.tokenEnc = encrypt(p.token);
+      c.name = p.name || c.name;
+      c.status = "ok";
+      c.lastError = "";
+      c.failures = 0;
+      await c.save();
+      refreshed.push(`${c.account} (${p.name})`);
+    }
+  }
+  return refreshed;
+}
+
 async function saveConnection({ account, platform, externalId, name, token, expiresAt, user }) {
   return Connection.findOneAndUpdate(
     { account, platform },

@@ -9,7 +9,7 @@ import { badRequest, notFound } from "../utils/httpError.js";
 import { verify } from "../utils/secret.js";
 import { Connection } from "../models/Connection.js";
 import { SyncLog } from "../models/SyncLog.js";
-import { choosePage, facebookPages, frontendUrl, instagramConnect, keepPending, loginUrl, metaSetup, readPending, readState, youtubeConnect } from "./auth.js";
+import { choosePage, facebookPages, frontendUrl, instagramConnect, keepPending, loginUrl, metaSetup, readPending, readState, refreshFacebookPages, youtubeConnect } from "./auth.js";
 import { readyWeek, syncNow } from "./sync.js";
 import { freshToken } from "./auth.js";
 import { instagramCheck } from "./fetch.js";
@@ -57,7 +57,7 @@ connectRoutes.post(
       throw e;
     }
     await logConnect({ account: conn.account, platform: "Facebook", ok: true, message: `Connected Page "${conn.name}"` });
-    const [first] = await syncNow({ account: conn.account, platform: conn.platform, weeks: 1 });
+    const first = await firstFetch(conn.account, conn.platform);
     res.json({ connection: conn, firstFetch: first });
   })
 );
@@ -105,6 +105,13 @@ export async function logConnect({ account, platform, ok, message }) {
 }
 const accountOf = (state) => verify(String(state || ""))?.account || "";
 
+// After a new connection: last week is fetched straight away; the 12 weeks before it follow in the background
+async function firstFetch(account, platform) {
+  const [first] = await syncNow({ account, platform, weeks: 1 });
+  syncNow({ account, platform, weeks: 12 }).catch((e) => console.error(`[insights] 12-week fetch failed for ${account} · ${platform}: ${e.message}`));
+  return first;
+}
+
 async function failed(res, req, platform, message) {
   await logConnect({ account: accountOf(req.query.state), platform, ok: false, message });
   back(res, { error: message });
@@ -116,7 +123,15 @@ oauthRoutes.get("/facebook/callback", async (req, res) => {
     const state = readState(req.query.state, "Facebook");
     const pages = await facebookPages(String(req.query.code || ""));
     if (!pages.length) return failed(res, req, "Facebook", "Facebook login worked, but no Facebook Page was shared — connect again and tick the company's Page (the login must be a Page admin)");
-    await logConnect({ account: state.account, platform: "Facebook", ok: true, message: `Logged in — ${pages.length} Page${pages.length === 1 ? "" : "s"} shared (${pages.map((p) => p.name).join(", ")}). Waiting for the Page to be picked.` });
+    const refreshed = await refreshFacebookPages(pages);
+    await logConnect({
+      account: state.account,
+      platform: "Facebook",
+      ok: true,
+      message:
+        `Logged in — ${pages.length} Page${pages.length === 1 ? "" : "s"} shared (${pages.map((p) => p.name).join(", ")}). Waiting for the Page to be picked.` +
+        (refreshed.length ? ` Login refreshed for: ${refreshed.join(", ")}.` : ""),
+    });
     back(res, { pick: keepPending(state, pages), account: state.account });
   } catch (e) {
     await failed(res, req, "Facebook", e.message);
@@ -129,7 +144,7 @@ oauthRoutes.get("/instagram/callback", async (req, res) => {
     const state = readState(req.query.state, "Instagram");
     const conn = await instagramConnect(String(req.query.code || "").replace(/#_$/, ""), state);
     await logConnect({ account: conn.account, platform: "Instagram", ok: true, message: `Connected ${conn.name || "the Instagram account"}` });
-    const [first] = await syncNow({ account: conn.account, platform: "Instagram", weeks: 1 });
+    const first = await firstFetch(conn.account, "Instagram");
     back(res, { connected: "Instagram", account: conn.account, name: conn.name, fetched: first?.ok ? "1" : "0" });
   } catch (e) {
     await failed(res, req, "Instagram", e.message);
@@ -142,7 +157,7 @@ oauthRoutes.get("/youtube/callback", async (req, res) => {
     const state = readState(req.query.state, "YouTube");
     const conn = await youtubeConnect(String(req.query.code || ""), state);
     await logConnect({ account: conn.account, platform: "YouTube", ok: true, message: `Connected ${conn.name || "the YouTube channel"}` });
-    const [first] = await syncNow({ account: conn.account, platform: "YouTube", weeks: 1 });
+    const first = await firstFetch(conn.account, "YouTube");
     back(res, { connected: "YouTube", account: conn.account, name: conn.name, fetched: first?.ok ? "1" : "0" });
   } catch (e) {
     await failed(res, req, "YouTube", e.message);
